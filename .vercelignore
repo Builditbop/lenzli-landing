@@ -1,0 +1,16 @@
+node_modules
+.git
+.DS_Store
+*.log
+.env
+.env.local
+.cache
+dist
+.vercel
+Trash
+.Trash
+__tests__
+*.test.js
+*.test.jsx
+vitest.setup.js
+
