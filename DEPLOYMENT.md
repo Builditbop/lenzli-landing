@@ -128,48 +128,53 @@ git commit -m "Initial commit"
 gh repo create lenzli-landing --public --source=. --remote=origin --push
 ```
 
-### Step 2: Add GitHub Actions Workflow
+### Step 2: Configure GitHub Pages Settings
 
-Create `.github/workflows/deploy.yml`:
+**Important:** Enable GitHub Pages with GitHub Actions:
+1. Go to your repo → **Settings** → **Pages**
+2. **Source:** Select **GitHub Actions** (not "Deploy from a branch")
+3. Custom domain: **lenzli.com** (optional, for custom domain)
 
-```yaml
-name: Deploy to GitHub Pages
+### Step 3: Add Environment Variables
 
-on:
-  push:
-    branches: [ main ]
+Go to your repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Setup Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          
-      - name: Install and Build
-        run: |
-          npm install
-          npm run build
-          
-      - name: Deploy
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-          cname: lenzli.com
+Add these secrets (from your `.env` file):
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `VITE_FIREBASE_APP_ID`
+- `VITE_CLOUDINARY_CLOUD_NAME`
+- `VITE_CLOUDINARY_UPLOAD_PRESET`
+
+### Step 4: Push Code to Trigger Deployment
+
+The workflow file `.github/workflows/deploy.yml` is already configured. Simply push to main:
+
+```bash
+git add .
+git commit -m "Configure GitHub Pages deployment"
+git push origin main
 ```
 
-### Step 3: Configure GitHub Pages
-1. Go to your repo → **Settings** → **Pages**
-2. Source: **gh-pages branch**
-3. Custom domain: **lenzli.com**
+**The workflow will automatically:**
+- Use the built-in `GITHUB_TOKEN` (no manual token needed!)
+- Build your app with all environment variables
+- Deploy to GitHub Pages
+- Trigger on every push to `main` branch
 
-### Step 4: DNS Configuration
-Add these records at your domain registrar:
+### Step 5: Verify Deployment
+
+1. Go to **Actions** tab in your repo
+2. Watch the workflow run (takes 2-3 minutes)
+3. Once complete, your site will be live at `https://[username].github.io/lenzli-landing`
+4. If you set a custom domain, it will be at `https://lenzli.com`
+
+### Step 6: DNS Configuration (For Custom Domain)
+
+If you're using a custom domain (lenzli.com), add these DNS records at your registrar:
 
 ```
 Type: A
@@ -197,6 +202,8 @@ Name: www
 Value: [your-username].github.io
 TTL: 3600
 ```
+
+**Note:** After adding DNS records, GitHub will automatically configure SSL for your custom domain within 24 hours.
 
 ---
 
@@ -258,7 +265,27 @@ After deploying, verify:
 ### SSL not working?
 - Most hosting providers auto-provision SSL (takes 5-15 minutes)
 - Vercel/Netlify: Automatic and free
-- GitHub Pages: Enable HTTPS in settings
+- GitHub Pages: Enable HTTPS in settings → **Pages** → check "Enforce HTTPS"
+
+### GitHub Actions workflow failing?
+
+**"Permission denied" or "Token not found" errors:**
+- ✅ **Fixed!** The workflow now uses the built-in `GITHUB_TOKEN` automatically
+- No need to create a Personal Access Token (PAT)
+- Make sure GitHub Pages is set to **"GitHub Actions"** as source (not "Deploy from a branch")
+- Check that you have `permissions` set correctly in the workflow (already configured)
+
+**"Environment variables not found" errors:**
+- Go to repo → **Settings** → **Secrets and variables** → **Actions**
+- Add all required environment variables as repository secrets
+- Use the exact names listed in Step 3 (with `VITE_` prefix)
+- After adding secrets, re-run the workflow from the **Actions** tab
+
+**"Build failed" errors:**
+- Check the Actions log for specific error messages
+- Verify all dependencies are in `package.json`
+- Ensure Node.js version in workflow matches your local version
+- Check that all environment variables are set correctly
 
 ### Site showing 404?
 - Verify build folder is correct (`dist/`)
