@@ -292,17 +292,100 @@ After deploying, verify:
 - Check `index.html` exists in deployed folder
 - Clear browser cache
 
-### Images not loading?
-- Check browser console for errors
-- Verify Unsplash URLs are accessible
-- Check Content Security Policy settings
+### Vercel deployments not happening automatically?
+
+**Common causes and solutions:**
+
+1. **Git repository not connected:**
+   - Go to Vercel Dashboard → Your Project → **Settings** → **Git**
+   - If you see "No Git Repository Connected", click **"Connect Git Repository"**
+   - Select GitHub and authorize access
+   - Select your `lenzli-landing` repository
+
+2. **Wrong branch configured:**
+   - Check **Settings** → **Git** → **Production Branch**
+   - Ensure it's set to `main` (not `master` or another branch)
+   - Make sure you're pushing to the correct branch
+
+3. **GitHub integration not authorized:**
+   - Go to https://vercel.com/account/integrations
+   - Check if GitHub is connected
+   - If not, click **"Connect GitHub"** and authorize
+
+4. **Environment variables missing:**
+   - If build fails, check **Deployments** tab → Click failed deployment → **Build Logs**
+   - Add missing environment variables in **Settings** → **Environment Variables**
+
+5. **Manual deployment still works:**
+   - Even if auto-deploy isn't set up, you can still deploy manually:
+   ```bash
+   npx vercel --prod
+   ```
+
+**Quick fix:**
+- Go to Vercel Dashboard → Your Project → **Settings** → **Git**
+- If not connected, click **"Connect Git Repository"** → Select GitHub → Select your repo
+- Push to GitHub: `git push origin main`
+- Vercel will auto-deploy!
 
 ## 🚀 Continuous Deployment
 
 ### With Vercel (Recommended)
-1. Connect GitHub repo in Vercel dashboard
-2. Auto-deploys on every `git push`
-3. Preview deployments for PRs
+
+**To enable automatic deployments on every `git push`:**
+
+1. **Go to Vercel Dashboard:**
+   - Visit https://vercel.com/dashboard
+   - Click on your `lenzli-landing` project
+
+2. **Connect to GitHub:**
+   - Go to **Settings** → **Git**
+   - Click **"Connect Git Repository"** or **"Edit Git Repository"**
+   - Select **GitHub** as your Git provider
+   - Authorize Vercel to access your GitHub account (if not already done)
+   - Find and select your repository: `Builditbop/lenzli-landing`
+   - Click **"Connect"**
+
+3. **Configure Production Branch:**
+   - In **Settings** → **Git**, ensure:
+     - **Production Branch:** `main`
+     - **Root Directory:** `./` (leave as default)
+     - **Build Command:** `npm run build` (should auto-detect)
+     - **Output Directory:** `dist` (should auto-detect)
+   - Click **"Save"**
+
+4. **Verify Environment Variables:**
+   - Go to **Settings** → **Environment Variables**
+   - Ensure all your `VITE_*` variables are set:
+     - `VITE_FIREBASE_API_KEY`
+     - `VITE_FIREBASE_AUTH_DOMAIN`
+     - `VITE_FIREBASE_PROJECT_ID`
+     - `VITE_FIREBASE_STORAGE_BUCKET`
+     - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+     - `VITE_FIREBASE_APP_ID`
+     - `VITE_CLOUDINARY_CLOUD_NAME`
+     - `VITE_CLOUDINARY_UPLOAD_PRESET`
+
+5. **Test Auto-Deployment:**
+   ```bash
+   git add .
+   git commit -m "Test auto-deployment"
+   git push origin main
+   ```
+   - Vercel will automatically detect the push and start a new deployment
+   - You can watch it in the **Deployments** tab
+
+**Once connected, every `git push` to `main` will automatically:**
+- ✅ Trigger a new deployment
+- ✅ Build your app with environment variables
+- ✅ Deploy to production
+- ✅ Create preview deployments for pull requests
+
+**Benefits:**
+- ✅ No manual deployment needed
+- ✅ Preview deployments for every PR
+- ✅ Automatic rollback on build failures
+- ✅ Deployment history tracking
 
 ### With Netlify
 1. Link repository in Netlify dashboard
