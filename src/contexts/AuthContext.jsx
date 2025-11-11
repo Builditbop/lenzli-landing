@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
+import posthog from '../config/posthog';
 
 const AuthContext = createContext(null);
 
@@ -114,8 +115,17 @@ export const AuthProvider = ({ children }) => {
       if (user) {
         const profile = await fetchUserProfile(user.uid);
         setUserProfile(profile);
+        
+        // Identify user in PostHog (if initialized)
+        posthog.identify(user.uid, {
+          email: user.email,
+          name: user.displayName || profile?.displayName,
+          createdAt: profile?.createdAt
+        });
       } else {
         setUserProfile(null);
+        // Reset PostHog identification on logout (if initialized)
+        posthog.reset();
       }
       setLoading(false);
     });

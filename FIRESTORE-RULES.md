@@ -31,6 +31,26 @@ service cloud.firestore {
       allow create: if true;  // Anyone can join waitlist
       allow read: if request.auth != null;  // Only authenticated users can read
     }
+    
+    // Messages - chat participants can read, create, and update read status
+    match /chats/{chatId}/messages/{messageId} {
+      allow read: if request.auth != null && 
+        request.auth.uid in chatId.split('_');
+      allow create: if request.auth != null && 
+        request.auth.uid in chatId.split('_');
+      // Allow update for read receipts (users can mark messages as read)
+      allow update: if request.auth != null && 
+        request.auth.uid in chatId.split('_');
+    }
+    
+    // Typing indicators - chat participants can read and write their own typing status
+    match /chats/{chatId}/typing/{userId} {
+      allow read: if request.auth != null && 
+        request.auth.uid in chatId.split('_');
+      allow write: if request.auth != null && 
+        request.auth.uid == userId &&
+        request.auth.uid in chatId.split('_');
+    }
   }
 }
 ```

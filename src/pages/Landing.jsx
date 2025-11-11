@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { collection, addDoc } from "firebase/firestore";
 import { db } from "../config/firebase";
+import posthog from "../config/posthog";
 
 // Lightweight, dependency-free animations via CSS keyframes.
 
@@ -10,6 +11,11 @@ export default function LenzliLanding() {
     const [submitted, setSubmitted] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+
+    useEffect(() => {
+      // Track landing page view
+      posthog.capture('landing_page_viewed');
+    }, []);
 
     const handleSubmit = async (e) => {
       e.preventDefault();
@@ -26,11 +32,25 @@ export default function LenzliLanding() {
           source: "landing_page"
         });
         console.log("Email saved successfully!"); // Debug log
+        
+        // Track waitlist signup
+        posthog.capture('waitlist_signup', {
+          source: 'landing_page',
+          email_domain: email.split('@')[1] || 'unknown'
+        });
+        
         setSubmitted(true);
         setEmail("");
       } catch (err) {
         console.error("Error saving email:", err);
         console.error("Error details:", err.code, err.message); // More debug info
+        
+        // Track waitlist signup error
+        posthog.capture('waitlist_signup_failed', {
+          error: err.message,
+          error_code: err.code
+        });
+        
         setError(`Error: ${err.message || "Something went wrong. Please try again."}`);
       } finally {
         setLoading(false);
@@ -83,8 +103,20 @@ export default function LenzliLanding() {
               <a href="#faq" className="hover:text-white">FAQ</a>
             </div>
             <div className="flex items-center gap-3">
-              <Link to="/login" className="hidden sm:inline-block rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10 transition">Log In</Link>
-              <Link to="/signup" className="rounded-2xl bg-white text-black px-4 py-2 text-sm font-medium hover:bg-white/90 transition">Sign Up</Link>
+              <Link 
+                to="/login" 
+                onClick={() => posthog.capture('cta_clicked', { cta_type: 'login', location: 'navbar' })}
+                className="hidden sm:inline-block rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10 transition"
+              >
+                Log In
+              </Link>
+              <Link 
+                to="/signup" 
+                onClick={() => posthog.capture('cta_clicked', { cta_type: 'signup', location: 'navbar' })}
+                className="rounded-2xl bg-white text-black px-4 py-2 text-sm font-medium hover:bg-white/90 transition"
+              >
+                Sign Up
+              </Link>
             </div>
           </nav>
         </header>
@@ -237,8 +269,20 @@ export default function LenzliLanding() {
             <h3 className="text-3xl md:text-4xl font-semibold">Claim your handle</h3>
             <p className="mt-3 text-white/70">Be part of the first wave of the Lenzli creator network.</p>
             <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
-              <Link to="/signup" className="rounded-2xl bg-white text-black px-6 py-3 text-sm font-medium hover:bg-white/90 transition text-center">Sign Up Now</Link>
-              <Link to="/login" className="rounded-2xl border border-white/15 bg-white/5 px-6 py-3 text-sm hover:bg-white/10 transition text-center">Log In</Link>
+              <Link 
+                to="/signup" 
+                onClick={() => posthog.capture('cta_clicked', { cta_type: 'signup', location: 'hero_section' })}
+                className="rounded-2xl bg-white text-black px-6 py-3 text-sm font-medium hover:bg-white/90 transition text-center"
+              >
+                Sign Up Now
+              </Link>
+              <Link 
+                to="/login" 
+                onClick={() => posthog.capture('cta_clicked', { cta_type: 'login', location: 'hero_section' })}
+                className="rounded-2xl border border-white/15 bg-white/5 px-6 py-3 text-sm hover:bg-white/10 transition text-center"
+              >
+                Log In
+              </Link>
             </div>
           </div>
         </section>

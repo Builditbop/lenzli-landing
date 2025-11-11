@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, addDoc, orderBy, doc, getDoc, getDocs } from 'firebase/firestore';
+import React, { useState, useEffect, useRef } from 'react';
+import { collection, query, where, onSnapshot, addDoc, orderBy, doc, getDoc, getDocs, writeBatch, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
+import { uploadMessageImage } from '../utils/nsfwDetection';
+import posthog from '../config/posthog';
 
 export default function Messages() {
   const { currentUser } = useAuth();
@@ -11,24 +13,87 @@ export default function Messages() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [error, setError] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [otherUserTyping, setOtherUserTyping] = useState(false);
+  const fileInputRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const typingDocRef = useRef(null);
 
   useEffect(() => {
     fetchConnections();
+    // Track messages page view
+    posthog.capture('messages_page_viewed');
   }, [currentUser]);
 
   useEffect(() => {
     if (!selectedChat) {
       setMessages([]);
+      setOtherUserTyping(false);
       return undefined;
     }
 
     const unsubscribe = subscribeToMessages(selectedChat.chatId);
+    const unsubscribeTyping = subscribeToTyping(selectedChat.chatId);
+    
     return () => {
       if (typeof unsubscribe === 'function') {
         unsubscribe();
       }
+      if (typeof unsubscribeTyping === 'function') {
+        unsubscribeTyping();
+      }
+      // Clear typing status when leaving chat
+      if (typingDocRef.current) {
+        deleteDoc(typingDocRef.current);
+      }
     };
   }, [selectedChat]);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Mark messages as read when viewing chat
+  useEffect(() => {
+    if (!selectedChat || !currentUser?.uid || messages.length === 0) return;
+
+    // Find unread messages sent by the other person
+    const unreadMessages = messages.filter(
+      (msg) => msg.senderId !== currentUser.uid && !msg.readBy?.includes(currentUser.uid)
+    );
+
+    if (unreadMessages.length === 0) return;
+
+    // Mark them as read
+    const markAsRead = async () => {
+      try {
+        const batch = writeBatch(db);
+        unreadMessages.forEach((msg) => {
+          const messageRef = doc(db, 'chats', selectedChat.chatId, 'messages', msg.id);
+          const readBy = msg.readBy || [];
+          if (!readBy.includes(currentUser.uid)) {
+            batch.update(messageRef, {
+              readBy: [...readBy, currentUser.uid],
+              readAt: {
+                ...(msg.readAt || {}),
+                [currentUser.uid]: new Date().toISOString()
+              }
+            });
+          }
+        });
+        await batch.commit();
+      } catch (error) {
+        console.error('Error marking messages as read:', error);
+      }
+    };
+
+    markAsRead();
+  }, [messages, selectedChat, currentUser]);
 
   const fetchConnections = async () => {
     if (!currentUser?.uid) return;
@@ -80,48 +145,211 @@ export default function Messages() {
     return unsubscribe;
   };
 
+  const subscribeToTyping = (chatId) => {
+    if (!currentUser?.uid) return;
+    
+    // Get the other user's ID
+    const chatUserIds = chatId.split('_');
+    const otherUserId = chatUserIds.find(id => id !== currentUser.uid);
+    
+    if (!otherUserId) return;
+
+    // Listen to the other user's typing status
+    const typingRef = doc(db, 'chats', chatId, 'typing', otherUserId);
+    
+    const unsubscribe = onSnapshot(typingRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const typingData = snapshot.data();
+        // Check if typing status is recent (within last 3 seconds)
+        const timestamp = typingData.timestamp;
+        if (timestamp) {
+          const typingTime = timestamp.toMillis ? timestamp.toMillis() : timestamp;
+          const now = Date.now();
+          if (now - typingTime < 3000) {
+            setOtherUserTyping(true);
+            // Auto-hide after 3 seconds if no update
+            setTimeout(() => {
+              setOtherUserTyping(false);
+            }, 3000);
+          } else {
+            setOtherUserTyping(false);
+          }
+        } else {
+          setOtherUserTyping(true);
+        }
+      } else {
+        setOtherUserTyping(false);
+      }
+    });
+
+    return unsubscribe;
+  };
+
+  const updateTypingStatus = async (isUserTyping) => {
+    if (!selectedChat || !currentUser?.uid) return;
+
+    const chatId = selectedChat.chatId;
+    const typingRef = doc(db, 'chats', chatId, 'typing', currentUser.uid);
+    typingDocRef.current = typingRef;
+
+    if (isUserTyping) {
+      await setDoc(typingRef, {
+        userId: currentUser.uid,
+        timestamp: serverTimestamp()
+      }, { merge: true });
+    } else {
+      await deleteDoc(typingRef);
+    }
+  };
+
+  const handleMessageChange = (e) => {
+    const value = e.target.value;
+    setNewMessage(value);
+    
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Update typing status if user is typing
+    if (value.trim().length > 0) {
+      if (!isTyping) {
+        setIsTyping(true);
+        updateTypingStatus(true);
+      }
+      
+      // Clear typing status after 2 seconds of no typing
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsTyping(false);
+        updateTypingStatus(false);
+      }, 2000);
+    } else {
+      // Clear typing status immediately if input is empty
+      if (isTyping) {
+        setIsTyping(false);
+        updateTypingStatus(false);
+      }
+    }
+  };
+
+  const handleImageSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file');
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Image must be less than 10MB');
+      return;
+    }
+
+    // Show preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeImagePreview = () => {
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !selectedChat) return;
+    if ((!newMessage.trim() && !imagePreview) || !selectedChat) return;
+
+    setUploadingImage(true);
+    setError('');
 
     try {
+      let imageUrl = null;
+
+      // Upload image if preview exists
+      if (imagePreview && fileInputRef.current?.files?.[0]) {
+        const file = fileInputRef.current.files[0];
+        const result = await uploadMessageImage(file);
+        
+        if (result.isNSFW) {
+          setError('Image was rejected due to inappropriate content');
+          setUploadingImage(false);
+          removeImagePreview();
+          return;
+        }
+        
+        imageUrl = result.url;
+      }
+
+      // Send message with text and/or image
       const messagesRef = collection(db, 'chats', selectedChat.chatId, 'messages');
       await addDoc(messagesRef, {
-        text: newMessage,
+        text: newMessage.trim() || '',
+        imageUrl: imageUrl || null,
         senderId: currentUser.uid,
         senderName: currentUser.displayName,
         timestamp: new Date().toISOString(),
-        read: false
+        readBy: [], // Array of user IDs who have read this message
+        readAt: {} // Object mapping userId to read timestamp
       });
 
+      // Track message sent event
+      posthog.capture('message_sent', {
+        chat_id: selectedChat.chatId,
+        recipient_id: selectedChat.creatorId,
+        has_text: !!newMessage.trim(),
+        has_image: !!imageUrl,
+        message_length: newMessage.trim().length
+      });
+
+      // Reset form
       setNewMessage('');
+      removeImagePreview();
+      
+      // Clear typing status
+      setIsTyping(false);
+      updateTypingStatus(false);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
     } catch (error) {
       console.error('Error sending message:', error);
+      setError(error.message || 'Failed to send message');
+    } finally {
+      setUploadingImage(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-black flex items-center justify-center">
         <div className="text-white">Loading messages...</div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen bg-black text-white flex flex-col">
+    <div className="h-screen bg-gradient-to-b from-black via-gray-900 to-black text-white flex flex-col">
       {/* Header */}
-      <header className="border-b border-white/10 bg-black/60 backdrop-blur flex-shrink-0">
+      <header className="border-b border-white/10 bg-black/60 backdrop-blur sticky top-0 z-40 flex-shrink-0">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
-            <Link to="/discover" className="text-xl font-semibold hover:opacity-80">
+            <Link to="/discover" className="text-xl font-semibold hover:opacity-80 transition">
               Lenzli
             </Link>
           </div>
           <div className="flex items-center gap-4 text-sm">
-            <Link to="/discover" className="hover:text-white/80">Discover</Link>
-            <Link to="/connections" className="hover:text-white/80">Connections</Link>
-            <Link to="/profile" className="hover:text-white/80">Profile</Link>
+            <Link to="/discover" className="hover:text-white/80 transition">Discover</Link>
+            <Link to="/connections" className="hover:text-white/80 transition">Connections</Link>
+            <Link to="/messages" className="hover:text-white/80 transition font-medium text-emerald-400">Messages</Link>
+            <Link to="/profile" className="hover:text-white/80 transition">Profile</Link>
           </div>
         </nav>
       </header>
@@ -129,10 +357,15 @@ export default function Messages() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Conversations List */}
-        <div className="w-80 border-r border-white/10 bg-white/5 overflow-y-auto">
-          <div className="p-4 border-b border-white/10">
-            <h2 className="text-xl font-semibold">Messages</h2>
-            <p className="text-xs text-white/60 mt-1">{connections.length} conversations</p>
+        <div className="w-80 border-r border-white/10 bg-gradient-to-b from-white/5 to-white/5 backdrop-blur-sm overflow-y-auto">
+          <div className="p-4 border-b border-white/10 bg-white/5">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              Messages
+            </h2>
+            <p className="text-xs text-white/60 mt-1">{connections.length} {connections.length === 1 ? 'conversation' : 'conversations'}</p>
           </div>
 
           {connections.length === 0 ? (
@@ -152,9 +385,17 @@ export default function Messages() {
               {connections.map((connection) => (
                 <button
                   key={connection.id}
-                  onClick={() => setSelectedChat(connection)}
-                  className={`w-full p-4 text-left hover:bg-white/5 transition ${
-                    selectedChat?.id === connection.id ? 'bg-white/10' : ''
+                  onClick={() => {
+                    setSelectedChat(connection);
+                    // Track chat opened event
+                    posthog.capture('chat_opened', {
+                      chat_id: connection.chatId,
+                      recipient_id: connection.creatorId,
+                      recipient_role: connection.creator?.role
+                    });
+                  }}
+                  className={`w-full p-4 text-left hover:bg-white/10 transition-all duration-200 ${
+                    selectedChat?.id === connection.id ? 'bg-gradient-to-r from-emerald-400/10 to-emerald-500/5 border-l-2 border-emerald-400' : ''
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -181,19 +422,19 @@ export default function Messages() {
         {selectedChat ? (
           <div className="flex-1 flex flex-col">
             {/* Chat Header */}
-            <div className="p-4 border-b border-white/10 bg-white/5">
+            <div className="p-4 border-b border-white/10 bg-gradient-to-r from-white/5 to-white/5 backdrop-blur-sm">
               <div className="flex items-center gap-3">
                 <div
-                  className="w-10 h-10 rounded-full bg-cover bg-center"
+                  className="w-12 h-12 rounded-full bg-cover bg-center ring-2 ring-emerald-400/20"
                   style={{
                     backgroundImage: selectedChat.creator.portfolioImages?.[0]
                       ? `url(${selectedChat.creator.portfolioImages[0]})`
-                      : 'linear-gradient(to bottom right, rgba(255,255,255,0.2), rgba(255,255,255,0.05))'
+                      : 'linear-gradient(to bottom right, rgba(16,185,129,0.3), rgba(139,92,246,0.3))'
                   }}
                 />
-                <div>
-                  <div className="font-semibold">{selectedChat.creator.displayName}</div>
-                  <div className="text-xs text-white/60">{selectedChat.creator.role}</div>
+                <div className="flex-1">
+                  <div className="font-semibold text-lg">{selectedChat.creator.displayName}</div>
+                  <div className="text-xs text-emerald-400/80">{selectedChat.creator.role}</div>
                 </div>
               </div>
             </div>
@@ -210,44 +451,171 @@ export default function Messages() {
                   <p className="text-white/70">Start the conversation!</p>
                 </div>
               ) : (
-                messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex ${message.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}
-                  >
+                <>
+                  {messages.map((message) => (
                     <div
-                      className={`max-w-xs md:max-w-md px-4 py-2 rounded-2xl ${
-                        message.senderId === currentUser.uid
-                          ? 'bg-emerald-400 text-black'
-                          : 'bg-white/10 text-white'
-                      }`}
+                      key={message.id}
+                      className={`flex ${message.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}
                     >
-                      <p className="text-sm">{message.text}</p>
-                      <p className="text-xs mt-1 opacity-70">
-                        {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
+                      <div
+                        className={`max-w-xs md:max-w-md px-4 py-2 rounded-2xl ${
+                          message.senderId === currentUser.uid
+                            ? 'bg-emerald-400 text-black'
+                            : 'bg-white/10 text-white'
+                        }`}
+                      >
+                      {message.imageUrl && (
+                        <div className="mb-2 rounded-xl overflow-hidden border border-white/10">
+                          <img
+                            src={message.imageUrl}
+                            alt="Shared"
+                            className="w-full h-auto max-h-64 object-cover cursor-pointer hover:opacity-90 transition-all duration-200"
+                            onClick={() => {
+                              // Open in lightbox/modal
+                              const newWindow = window.open(message.imageUrl, '_blank');
+                              if (!newWindow) {
+                                // Fallback: download image
+                                const link = document.createElement('a');
+                                link.href = message.imageUrl;
+                                link.download = 'image';
+                                link.click();
+                              }
+                            }}
+                          />
+                        </div>
+                      )}
+                      {message.text && (
+                        <p className="text-sm">{message.text}</p>
+                      )}
+                      <div className={`flex items-center gap-1 mt-1 ${message.imageUrl && !message.text ? 'mt-0' : ''}`}>
+                        <p className="text-xs opacity-70">
+                          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        {/* Read receipt indicators (only for sent messages) */}
+                        {message.senderId === currentUser.uid && selectedChat && (() => {
+                          // Get the recipient's ID (the other user in the chat)
+                          const chatUserIds = selectedChat.chatId.split('_');
+                          const recipientId = chatUserIds.find(id => id !== currentUser.uid);
+                          const isRead = recipientId && message.readBy?.includes(recipientId);
+                          
+                          return (
+                            <div className="flex items-center">
+                              {isRead ? (
+                                // Double checkmark for read
+                                <span className="text-xs opacity-70" title="Read">
+                                  ✓✓
+                                </span>
+                              ) : (
+                                // Single checkmark for sent
+                                <span className="text-xs opacity-50" title="Sent">
+                                  ✓
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                  {/* Typing Indicator */}
+                  {otherUserTyping && (
+                    <div className="flex justify-start">
+                      <div className="max-w-xs md:max-w-md px-4 py-2 rounded-2xl bg-white/10 text-white/80 backdrop-blur-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            <span className="w-2 h-2 bg-white/70 rounded-full animate-bounce" style={{ animationDelay: '0ms', animationDuration: '1.4s' }}></span>
+                            <span className="w-2 h-2 bg-white/70 rounded-full animate-bounce" style={{ animationDelay: '200ms', animationDuration: '1.4s' }}></span>
+                            <span className="w-2 h-2 bg-white/70 rounded-full animate-bounce" style={{ animationDelay: '400ms', animationDuration: '1.4s' }}></span>
+                          </div>
+                          <span className="text-xs text-white/70 italic">{selectedChat?.creator?.displayName || 'Someone'} is typing...</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </>
               )}
             </div>
 
             {/* Message Input */}
-            <form onSubmit={sendMessage} className="p-4 border-t border-white/10 bg-white/5">
-              <div className="flex gap-2">
+            <form onSubmit={sendMessage} className="p-4 border-t border-white/10 bg-gradient-to-r from-white/5 to-white/5 backdrop-blur-sm">
+              {error && (
+                <div className="mb-3 p-3 bg-red-500/20 border border-red-500/50 rounded-xl text-sm text-red-300 flex items-center gap-2">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {error}
+                </div>
+              )}
+              
+              {imagePreview && (
+                <div className="mb-3 relative inline-block">
+                  <div className="relative w-40 h-40 rounded-xl overflow-hidden border-2 border-emerald-400/50 shadow-lg">
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={removeImagePreview}
+                      className="absolute top-2 right-2 w-7 h-7 bg-black/80 hover:bg-black rounded-full flex items-center justify-center text-white transition-all duration-200 hover:scale-110"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                  id="image-upload"
+                />
+                <label
+                  htmlFor="image-upload"
+                  className="rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm cursor-pointer hover:bg-white/10 hover:border-white/25 transition-all duration-200 flex items-center justify-center group"
+                  title="Upload image"
+                >
+                  <svg className="w-5 h-5 group-hover:text-emerald-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </label>
                 <input
                   type="text"
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
+                  onChange={handleMessageChange}
                   placeholder="Type a message..."
-                  className="flex-1 rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-white/20"
+                  className="flex-1 rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400/30 transition-all"
                 />
                 <button
                   type="submit"
-                  disabled={!newMessage.trim()}
-                  className="rounded-2xl bg-emerald-400 text-black px-6 py-3 text-sm font-medium hover:bg-emerald-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={(!newMessage.trim() && !imagePreview) || uploadingImage}
+                  className="rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-500 text-black px-6 py-3 text-sm font-semibold hover:from-emerald-500 hover:to-emerald-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg hover:shadow-emerald-400/20"
                 >
-                  Send
+                  {uploadingImage ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                      </svg>
+                      Send
+                    </>
+                  )}
                 </button>
               </div>
             </form>

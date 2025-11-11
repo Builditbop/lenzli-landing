@@ -4,6 +4,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { useSpring, animated } from '@react-spring/web';
+import posthog from '../config/posthog';
 
 export default function Discover() {
   const { currentUser } = useAuth();
@@ -16,6 +17,8 @@ export default function Discover() {
 
   useEffect(() => {
     fetchCreators();
+    // Track page view
+    posthog.capture('discover_page_viewed');
   }, [currentUser]);
 
   const fetchCreators = async () => {
@@ -63,6 +66,13 @@ export default function Discover() {
           createdAt: new Date().toISOString()
         });
 
+        // Track swipe right/connect event
+        posthog.capture('swipe_right', {
+          creator_id: currentCreator.id,
+          creator_role: currentCreator.role,
+          swipe_index: currentIndex + 1
+        });
+
         // Check if there's a mutual connection
         const reverseConnectionRef = doc(db, 'connections', `${currentCreator.id}_${currentUser.uid}`);
         const reverseConnection = await getDoc(reverseConnectionRef);
@@ -72,10 +82,27 @@ export default function Discover() {
           setMatchedUser(currentCreator);
           setShowMatch(true);
           setTimeout(() => setShowMatch(false), 3000);
+          
+          // Track match event
+          posthog.capture('match_created', {
+            matched_user_id: currentCreator.id,
+            matched_user_role: currentCreator.role
+          });
         }
       } catch (error) {
         console.error('Error saving connection:', error);
+        posthog.capture('connection_failed', {
+          action: 'connect',
+          error: error.message
+        });
       }
+    } else if (action === 'pass') {
+      // Track swipe left/pass event
+      posthog.capture('swipe_left', {
+        creator_id: currentCreator.id,
+        creator_role: currentCreator.role,
+        swipe_index: currentIndex + 1
+      });
     }
 
     // Move to next card with animation
@@ -265,7 +292,14 @@ export default function Discover() {
 
               {/* View Profile Button */}
               <button
-                onClick={() => navigate(`/profile/${currentCreator?.id}`)}
+                onClick={() => {
+                  posthog.capture('profile_viewed', {
+                    viewed_user_id: currentCreator?.id,
+                    viewed_user_role: currentCreator?.role,
+                    context: 'discover'
+                  });
+                  navigate(`/profile/${currentCreator?.id}`);
+                }}
                 className="flex items-center gap-2 px-5 py-4 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 transition-all shadow-lg"
                 title="View Profile"
               >

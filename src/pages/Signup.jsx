@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import posthog from '../config/posthog';
 
 export default function Signup() {
   const [email, setEmail] = useState('');
@@ -24,8 +25,18 @@ export default function Signup() {
 
     try {
       await signup(email, password, displayName);
+      // Track signup event
+      posthog.capture('signup_completed', {
+        method: 'email',
+        has_display_name: !!displayName
+      });
       navigate('/profile-setup');
     } catch (error) {
+      // Track signup error
+      posthog.capture('signup_failed', {
+        method: 'email',
+        error: error.message
+      });
       setError(error.message || 'Failed to create account');
     } finally {
       setLoading(false);
@@ -38,8 +49,17 @@ export default function Signup() {
 
     try {
       await signInWithGoogle();
+      // Track Google signup event
+      posthog.capture('signup_completed', {
+        method: 'google'
+      });
       navigate('/profile-setup');
     } catch (error) {
+      // Track Google signup error
+      posthog.capture('signup_failed', {
+        method: 'google',
+        error: error.message
+      });
       setError(error.message || 'Failed to sign in with Google');
     } finally {
       setLoading(false);

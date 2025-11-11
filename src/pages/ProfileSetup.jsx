@@ -4,6 +4,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { uploadMultipleImages } from '../utils/cloudinary';
+import posthog from '../config/posthog';
 
 export default function ProfileSetup() {
   const { currentUser } = useAuth();
@@ -65,9 +66,21 @@ export default function ProfileSetup() {
         ...prev,
         portfolioImages: [...prev.portfolioImages, ...urls].slice(0, 6)
       }));
+      
+      // Track image upload event
+      posthog.capture('image_uploaded', {
+        image_count: urls.length,
+        total_images: profileData.portfolioImages.length + urls.length,
+        context: 'profile_setup'
+      });
     } catch (err) {
       setError('Failed to upload images');
       console.error(err);
+      // Track upload error
+      posthog.capture('image_upload_failed', {
+        context: 'profile_setup',
+        error: err.message
+      });
     } finally {
       setLoading(false);
     }
@@ -86,10 +99,27 @@ export default function ProfileSetup() {
         updatedAt: new Date().toISOString()
       });
 
+      // Track profile completion event
+      posthog.capture('profile_completed', {
+        role: profileData.role,
+        gear_count: profileData.gear.length,
+        specialties_count: profileData.specialties.length,
+        photography_styles_count: profileData.photographyStyles.length,
+        portfolio_images_count: profileData.portfolioImages.length,
+        skill_level: profileData.skillLevel,
+        looking_for_count: profileData.lookingFor.length,
+        has_bio: !!profileData.bio,
+        has_location: !!profileData.location
+      });
+
       navigate('/discover');
     } catch (err) {
       setError('Failed to save profile');
       console.error(err);
+      // Track profile completion error
+      posthog.capture('profile_completion_failed', {
+        error: err.message
+      });
     } finally {
       setLoading(false);
     }

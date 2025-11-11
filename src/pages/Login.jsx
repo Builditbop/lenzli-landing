@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import posthog from '../config/posthog';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -17,8 +18,17 @@ export default function Login() {
 
     try {
       await login(email, password);
+      // Track login event
+      posthog.capture('login_successful', {
+        method: 'email'
+      });
       navigate('/discover');
     } catch (error) {
+      // Track login error
+      posthog.capture('login_failed', {
+        method: 'email',
+        error: error.message
+      });
       setError(error.message || 'Failed to log in');
     } finally {
       setLoading(false);
@@ -31,8 +41,17 @@ export default function Login() {
 
     try {
       await signInWithGoogle();
+      // Track Google login event
+      posthog.capture('login_successful', {
+        method: 'google'
+      });
       navigate('/discover');
     } catch (error) {
+      // Track Google login error
+      posthog.capture('login_failed', {
+        method: 'google',
+        error: error.message
+      });
       setError(error.message || 'Failed to sign in with Google');
     } finally {
       setLoading(false);

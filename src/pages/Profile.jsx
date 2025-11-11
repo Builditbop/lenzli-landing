@@ -18,6 +18,18 @@ export default function Profile() {
   }, [userId, currentUser]);
 
   useEffect(() => {
+    if (profile) {
+      // Track profile view
+      posthog.capture('profile_page_viewed', {
+        profile_id: profile.id,
+        is_own_profile: isOwnProfile,
+        profile_role: profile.role,
+        has_portfolio_images: (profile.portfolioImages?.length || 0) > 0
+      });
+    }
+  }, [profile, isOwnProfile]);
+
+  useEffect(() => {
     const handleKeyDown = (e) => {
       if (!selectedImage) return;
       
@@ -56,10 +68,13 @@ export default function Profile() {
 
   const handleLogout = async () => {
     try {
+      // Track logout event
+      posthog.capture('logout_clicked');
       await logout();
       navigate('/');
     } catch (error) {
       console.error('Failed to log out:', error);
+      posthog.capture('logout_failed', { error: error.message });
     }
   };
 
@@ -129,6 +144,7 @@ export default function Profile() {
               <div className="flex gap-3 flex-shrink-0">
                 <Link
                   to="/edit-profile"
+                  onClick={() => posthog.capture('edit_profile_clicked', { location: 'profile_page' })}
                   className="rounded-2xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-medium hover:bg-white/10 hover:border-white/30 transition-all duration-200 flex items-center gap-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -149,6 +165,11 @@ export default function Profile() {
             ) : (
               <Link
                 to="/messages"
+                onClick={() => posthog.capture('send_message_clicked', { 
+                  location: 'profile_page',
+                  recipient_id: profile?.id,
+                  recipient_role: profile?.role
+                })}
                 className="rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-500 text-black px-8 py-3 text-sm font-semibold hover:from-emerald-500 hover:to-emerald-600 transition-all duration-200 shadow-lg hover:shadow-emerald-400/20 flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

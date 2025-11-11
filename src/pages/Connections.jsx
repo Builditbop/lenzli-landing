@@ -3,6 +3,7 @@ import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firesto
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
+import posthog from '../config/posthog';
 
 export default function Connections() {
   const { currentUser } = useAuth();
@@ -11,7 +12,18 @@ export default function Connections() {
 
   useEffect(() => {
     fetchConnections();
+    // Track connections page view
+    posthog.capture('connections_page_viewed');
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!loading) {
+      // Track connections count
+      posthog.capture('connections_loaded', {
+        connections_count: connections.length
+      });
+    }
+  }, [loading, connections.length]);
 
   const fetchConnections = async () => {
     try {
@@ -105,6 +117,12 @@ export default function Connections() {
               <Link
                 key={connection.id}
                 to={`/profile/${connection.creator.id}`}
+                onClick={() => posthog.capture('connection_viewed', {
+                  connection_id: connection.id,
+                  creator_id: connection.creator.id,
+                  creator_role: connection.creator.role,
+                  location: 'connections_page'
+                })}
                 className="rounded-3xl border border-white/10 bg-white/5 p-6 hover:bg-white/10 transition group"
               >
                 <div className="flex items-start gap-4">

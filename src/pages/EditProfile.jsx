@@ -4,6 +4,7 @@ import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { uploadMultipleImages } from '../utils/cloudinary';
+import posthog from '../config/posthog';
 
 export default function EditProfile() {
   const { currentUser } = useAuth();
@@ -114,9 +115,22 @@ export default function EditProfile() {
         ...prev,
         portfolioImages: [...(prev.portfolioImages || []), ...result.urls].slice(0, 6)
       }));
+      
+      // Track image upload event
+      posthog.capture('image_uploaded', {
+        image_count: result.urls.length,
+        total_images: (profileData.portfolioImages?.length || 0) + result.urls.length,
+        rejected_count: result.rejected || 0,
+        context: 'edit_profile'
+      });
     } catch (err) {
       setError('Failed to upload images');
       console.error(err);
+      // Track upload error
+      posthog.capture('image_upload_failed', {
+        context: 'edit_profile',
+        error: err.message
+      });
     } finally {
       setUploadingImages(false);
     }
@@ -142,10 +156,30 @@ export default function EditProfile() {
         updatedAt: new Date().toISOString()
       });
 
+      // Track profile update event
+      posthog.capture('profile_updated', {
+        role: profileData.role,
+        gear_count: profileData.gear?.length || 0,
+        specialties_count: profileData.specialties?.length || 0,
+        photography_styles_count: profileData.photographyStyles?.length || 0,
+        portfolio_images_count: profileData.portfolioImages?.length || 0,
+        skill_level: profileData.skillLevel,
+        looking_for_count: profileData.lookingFor?.length || 0,
+        has_bio: !!profileData.bio,
+        has_location: !!profileData.location,
+        has_instagram: !!profileData.instagram,
+        has_website: !!profileData.website,
+        years_experience: profileData.yearsExperience
+      });
+
       navigate('/profile');
     } catch (err) {
       setError('Failed to save profile');
       console.error(err);
+      // Track profile update error
+      posthog.capture('profile_update_failed', {
+        error: err.message
+      });
     } finally {
       setLoading(false);
     }
