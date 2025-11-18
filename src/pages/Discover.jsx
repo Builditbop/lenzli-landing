@@ -4,7 +4,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { useSpring, animated } from '@react-spring/web';
-import posthog from '../config/posthog';
+import { filterBlockedUsers } from '../utils/safety';
 
 export default function Discover() {
   const { currentUser } = useAuth();
@@ -17,8 +17,6 @@ export default function Discover() {
 
   useEffect(() => {
     fetchCreators();
-    // Track page view
-    posthog.capture('discover_page_viewed');
   }, [currentUser]);
 
   const fetchCreators = async () => {
@@ -39,7 +37,9 @@ export default function Discover() {
         }
       });
       
-      setCreators(creatorsData);
+      // Filter out blocked users
+      const filteredCreators = await filterBlockedUsers(currentUser.uid, creatorsData);
+      setCreators(filteredCreators);
     } catch (error) {
       console.error('Error fetching creators:', error);
     } finally {
@@ -66,13 +66,6 @@ export default function Discover() {
           createdAt: new Date().toISOString()
         });
 
-        // Track swipe right/connect event
-        posthog.capture('swipe_right', {
-          creator_id: currentCreator.id,
-          creator_role: currentCreator.role,
-          swipe_index: currentIndex + 1
-        });
-
         // Check if there's a mutual connection
         const reverseConnectionRef = doc(db, 'connections', `${currentCreator.id}_${currentUser.uid}`);
         const reverseConnection = await getDoc(reverseConnectionRef);
@@ -82,27 +75,10 @@ export default function Discover() {
           setMatchedUser(currentCreator);
           setShowMatch(true);
           setTimeout(() => setShowMatch(false), 3000);
-          
-          // Track match event
-          posthog.capture('match_created', {
-            matched_user_id: currentCreator.id,
-            matched_user_role: currentCreator.role
-          });
         }
       } catch (error) {
         console.error('Error saving connection:', error);
-        posthog.capture('connection_failed', {
-          action: 'connect',
-          error: error.message
-        });
       }
-    } else if (action === 'pass') {
-      // Track swipe left/pass event
-      posthog.capture('swipe_left', {
-        creator_id: currentCreator.id,
-        creator_role: currentCreator.role,
-        swipe_index: currentIndex + 1
-      });
     }
 
     // Move to next card with animation
@@ -116,33 +92,64 @@ export default function Discover() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-white">Loading creators...</div>
+      <div className="min-h-screen bg-gradient-vibrant text-white relative overflow-hidden">
+        {/* Animated background blobs */}
+        <div className="absolute inset-0 bg-gradient-mesh opacity-60" />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/30 rounded-full blur-3xl animate-blob" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-500/30 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }} />
+        <div className="relative z-10">
+          {/* Header Skeleton */}
+          <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-gradient-to-r from-purple-900/80 via-pink-900/80 to-cyan-900/80 border-b-2 border-purple-400/30">
+            <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+              <div className="h-6 w-24 bg-white/10 rounded animate-pulse" />
+              <div className="flex items-center gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-4 w-16 bg-white/10 rounded animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+                ))}
+              </div>
+            </nav>
+          </header>
+
+          {/* Card Skeleton */}
+          <div className="flex items-center justify-center min-h-[calc(100vh-80px)] px-6 py-12">
+            <div className="w-full max-w-md mx-auto">
+              <div className="aspect-[3/4] rounded-3xl border-2 border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-cyan-500/20 backdrop-blur-md relative overflow-hidden">
+                <div className="absolute inset-0 flex flex-col justify-end p-6">
+                  <div className="space-y-3">
+                    <div className="h-8 w-48 bg-white/10 rounded animate-pulse" />
+                    <div className="h-4 w-32 bg-white/10 rounded animate-pulse" />
+                    <div className="flex gap-2 mt-4">
+                      <div className="h-6 w-20 bg-white/10 rounded-full animate-pulse" />
+                      <div className="h-6 w-20 bg-white/10 rounded-full animate-pulse" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-gradient-vibrant text-white relative overflow-hidden">
+      {/* Animated background blobs */}
+      <div className="absolute inset-0 bg-gradient-mesh opacity-60" />
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/30 rounded-full blur-3xl animate-blob" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-500/30 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }} />
+      <div className="relative z-10">
       {/* Header */}
-      <header className="border-b border-white/10 bg-black/60 backdrop-blur sticky top-0 z-50">
+      <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-gradient-to-r from-purple-900/80 via-pink-900/80 to-cyan-900/80 border-b-2 border-purple-400/30">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold">Lenzli</h1>
+            <Link to="/discover" className="text-xl font-bold text-gradient-primary">Lenzli</Link>
           </div>
-          <div className="flex items-center gap-4 text-sm">
-            <Link to="/discover" className="hover:text-white/80 transition">
-              Discover
-            </Link>
-            <Link to="/connections" className="hover:text-white/80 transition">
-              Connections
-            </Link>
-            <Link to="/messages" className="hover:text-white/80 transition">
-              Messages
-            </Link>
-            <Link to="/profile" className="hover:text-white/80 transition">
-              Profile
-            </Link>
+          <div className="flex items-center gap-4 text-sm text-white/90">
+            <Link to="/discover" className="hover:text-gradient-primary transition font-medium">Discover</Link>
+            <Link to="/connections" className="hover:text-gradient-primary transition font-medium">Connections</Link>
+            <Link to="/messages" className="hover:text-gradient-primary transition font-medium">Messages</Link>
+            <Link to="/profile" className="hover:text-gradient-primary transition font-medium">Profile</Link>
           </div>
         </nav>
       </header>
@@ -150,20 +157,20 @@ export default function Discover() {
       {/* Match Notification */}
       {showMatch && matchedUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="rounded-3xl border border-emerald-400/30 bg-gradient-to-br from-emerald-400/20 to-emerald-600/20 p-12 text-center max-w-md mx-6 animate-scale-in">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-emerald-400/30 flex items-center justify-center">
-              <svg className="w-12 h-12 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="rounded-3xl border-2 border-emerald-400 bg-gradient-to-br from-emerald-400/30 via-emerald-500/30 to-emerald-600/30 p-12 text-center max-w-md mx-6 animate-scale-in backdrop-blur-md glow-emerald">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-primary flex items-center justify-center">
+              <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h2 className="text-3xl font-bold mb-2">It's a Match!</h2>
-            <p className="text-white/80 mb-6">
-              You and <span className="font-semibold text-emerald-300">{matchedUser.displayName}</span> can now collaborate
+            <h2 className="text-3xl font-bold mb-2 text-gradient-secondary">It's a Match!</h2>
+            <p className="text-white/90 mb-6 font-medium">
+              You and <span className="font-bold text-gradient-primary">{matchedUser.displayName}</span> can now collaborate
             </p>
             <div className="flex gap-3">
               <Link
                 to="/messages"
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-400 text-black px-6 py-3 text-sm font-medium hover:bg-emerald-500 transition"
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-primary text-white px-6 py-3 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -172,7 +179,7 @@ export default function Discover() {
               </Link>
               <button
                 onClick={() => setShowMatch(false)}
-                className="rounded-2xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-medium hover:bg-white/10 transition"
+                className="rounded-2xl border-2 border-purple-400/50 bg-purple-500/20 px-6 py-3 text-sm font-medium hover:bg-purple-500/30 transition-all glow-purple"
               >
                 Continue
               </button>
@@ -281,44 +288,39 @@ export default function Discover() {
               {/* Pass Button */}
               <button
                 onClick={() => handleAction('pass')}
-                className="group flex items-center gap-3 px-6 py-4 rounded-2xl border-2 border-rose-400/30 bg-gradient-to-br from-rose-400/10 to-rose-600/10 hover:from-rose-400/20 hover:to-rose-600/20 hover:border-rose-400/50 transition-all shadow-lg hover:shadow-rose-400/20"
+                className="group flex items-center gap-3 px-6 py-4 rounded-2xl border-2 border-rose-400 bg-gradient-to-br from-rose-400/20 to-pink-500/20 hover:from-rose-400/30 hover:to-pink-500/30 hover:border-rose-400 transition-all shadow-lg hover:shadow-rose-400/30 glow-pink"
                 title="Pass"
               >
-                <svg className="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-6 h-6 text-rose-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-                <span className="font-semibold text-rose-400">Pass</span>
+                <span className="font-bold text-rose-300">Pass</span>
               </button>
 
               {/* View Profile Button */}
               <button
                 onClick={() => {
-                  posthog.capture('profile_viewed', {
-                    viewed_user_id: currentCreator?.id,
-                    viewed_user_role: currentCreator?.role,
-                    context: 'discover'
-                  });
                   navigate(`/profile/${currentCreator?.id}`);
                 }}
-                className="flex items-center gap-2 px-5 py-4 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 transition-all shadow-lg"
+                className="flex items-center gap-2 px-5 py-4 rounded-2xl border-2 border-purple-400/50 bg-purple-500/20 hover:bg-purple-500/30 transition-all shadow-lg glow-purple"
                 title="View Profile"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
-                <span className="font-medium text-sm">Profile</span>
+                <span className="font-semibold text-sm">Profile</span>
               </button>
 
               {/* Connect Button */}
               <button
                 onClick={() => handleAction('connect')}
-                className="group flex items-center gap-3 px-6 py-4 rounded-2xl border-2 border-emerald-400/30 bg-gradient-to-br from-emerald-400/10 to-emerald-600/10 hover:from-emerald-400/20 hover:to-emerald-600/20 hover:border-emerald-400/50 transition-all shadow-lg hover:shadow-emerald-400/20"
+                className="group flex items-center gap-3 px-6 py-4 rounded-2xl border-2 border-emerald-400 bg-gradient-to-br from-emerald-400/20 to-emerald-500/20 hover:from-emerald-400/30 hover:to-emerald-500/30 hover:border-emerald-400 transition-all shadow-lg hover:shadow-emerald-400/30 glow-emerald"
                 title="Connect"
               >
-                <svg className="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-6 h-6 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                 </svg>
-                <span className="font-semibold text-emerald-400">Connect</span>
+                <span className="font-bold text-emerald-300">Connect</span>
               </button>
             </div>
 
@@ -332,17 +334,17 @@ export default function Discover() {
             </div>
           </div>
         ) : (
-          <div className="text-center py-12 rounded-3xl border border-white/10 bg-white/5 px-6">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-emerald-400/20 to-emerald-600/20 border border-emerald-400/30 flex items-center justify-center">
-              <svg className="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="text-center py-12 rounded-3xl border-2 border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-cyan-500/20 px-6 backdrop-blur-md glow-purple">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-primary flex items-center justify-center">
+              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h2 className="text-2xl font-semibold mb-2">You've seen everyone!</h2>
-            <p className="text-white/70 mb-6">Check back later for more creators</p>
+            <h2 className="text-2xl font-bold mb-2 text-gradient-primary">You've seen everyone!</h2>
+            <p className="text-white/80 mb-6 font-medium">Check back later for more creators</p>
             <Link
               to="/connections"
-              className="inline-flex items-center gap-2 rounded-2xl bg-white text-black px-6 py-3 text-sm font-medium hover:bg-white/90 transition"
+              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-primary text-white px-6 py-3 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -351,6 +353,7 @@ export default function Discover() {
             </Link>
           </div>
         )}
+      </div>
       </div>
 
       <style>{`

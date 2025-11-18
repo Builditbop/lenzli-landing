@@ -3,6 +3,8 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { blockUser, isUserBlocked } from '../utils/safety';
+import ReportModal from '../components/ReportModal';
 
 export default function Profile() {
   const { currentUser, logout } = useAuth();
@@ -11,6 +13,9 @@ export default function Profile() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [blocking, setBlocking] = useState(false);
   const isOwnProfile = !userId || userId === currentUser.uid;
 
   useEffect(() => {
@@ -18,16 +23,37 @@ export default function Profile() {
   }, [userId, currentUser]);
 
   useEffect(() => {
-    if (profile) {
-      // Track profile view
-      posthog.capture('profile_page_viewed', {
-        profile_id: profile.id,
-        is_own_profile: isOwnProfile,
-        profile_role: profile.role,
-        has_portfolio_images: (profile.portfolioImages?.length || 0) > 0
-      });
+    if (!isOwnProfile && profile && currentUser?.uid) {
+      checkIfBlocked();
     }
-  }, [profile, isOwnProfile]);
+  }, [profile, currentUser, isOwnProfile]);
+
+  const checkIfBlocked = async () => {
+    try {
+      const blocked = await isUserBlocked(currentUser.uid, profile?.id);
+      setIsBlocked(blocked);
+    } catch (error) {
+      console.error('Error checking if user is blocked:', error);
+    }
+  };
+
+  const handleBlock = async () => {
+    if (!window.confirm(`Are you sure you want to block ${profile?.displayName}? You won't be able to see their profile or receive messages from them.`)) {
+      return;
+    }
+
+    setBlocking(true);
+    try {
+      await blockUser(currentUser.uid, profile.id);
+      setIsBlocked(true);
+    } catch (error) {
+      console.error('Error blocking user:', error);
+      alert('Failed to block user. Please try again.');
+    } finally {
+      setBlocking(false);
+    }
+  };
+
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -68,47 +94,87 @@ export default function Profile() {
 
   const handleLogout = async () => {
     try {
-      // Track logout event
-      posthog.capture('logout_clicked');
       await logout();
       navigate('/');
     } catch (error) {
       console.error('Failed to log out:', error);
-      posthog.capture('logout_failed', { error: error.message });
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-black flex items-center justify-center">
-        <div className="text-white">Loading profile...</div>
+      <div className="min-h-screen bg-gradient-vibrant text-white relative overflow-hidden">
+        {/* Animated background blobs */}
+        <div className="absolute inset-0 bg-gradient-mesh opacity-60" />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/30 rounded-full blur-3xl animate-blob" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-500/30 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }} />
+        <div className="relative z-10">
+          {/* Header Skeleton */}
+          <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-gradient-to-r from-purple-900/80 via-pink-900/80 to-cyan-900/80 border-b-2 border-purple-400/30">
+            <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+              <div className="h-6 w-24 bg-white/10 rounded animate-pulse" />
+              <div className="flex items-center gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-4 w-16 bg-white/10 rounded animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+                ))}
+              </div>
+            </nav>
+          </header>
+
+          {/* Profile Content Skeleton */}
+          <div className="mx-auto max-w-4xl px-6 py-8 relative z-10">
+            <div className="text-center mb-8">
+              <div className="w-32 h-32 rounded-full bg-white/10 mx-auto mb-4 animate-pulse" />
+              <div className="h-8 w-48 bg-white/10 rounded mx-auto mb-2 animate-pulse" />
+              <div className="h-4 w-32 bg-white/10 rounded mx-auto mb-4 animate-pulse" />
+              <div className="flex justify-center gap-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-6 w-20 bg-white/10 rounded-full animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="rounded-3xl border-2 border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-cyan-500/20 p-6">
+                  <div className="aspect-video bg-white/10 rounded-xl animate-pulse mb-4" style={{ animationDelay: `${i * 100}ms` }} />
+                  <div className="h-4 w-full bg-white/10 rounded animate-pulse mb-2" />
+                  <div className="h-3 w-3/4 bg-white/10 rounded animate-pulse" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-black text-white">
+    <div className="min-h-screen bg-gradient-vibrant text-white relative overflow-hidden">
+      {/* Animated background blobs */}
+      <div className="absolute inset-0 bg-gradient-mesh opacity-60" />
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/30 rounded-full blur-3xl animate-blob" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-500/30 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }} />
+      <div className="relative z-10">
       {/* Header */}
-      <header className="border-b border-white/10 bg-black/60 backdrop-blur sticky top-0 z-40">
+      <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-gradient-to-r from-purple-900/80 via-pink-900/80 to-cyan-900/80 border-b-2 border-purple-400/30">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
-            <Link to="/discover" className="text-xl font-semibold hover:opacity-80 transition">
-              Lenzli
-            </Link>
+            <Link to="/discover" className="text-xl font-bold text-gradient-primary">Lenzli</Link>
           </div>
-          <div className="flex items-center gap-4 text-sm">
-            <Link to="/discover" className="hover:text-white/80 transition">Discover</Link>
-            <Link to="/connections" className="hover:text-white/80 transition">Connections</Link>
-            <Link to="/messages" className="hover:text-white/80 transition">Messages</Link>
-            <Link to="/profile" className="hover:text-white/80 transition">Profile</Link>
+          <div className="flex items-center gap-4 text-sm text-white/90">
+            <Link to="/discover" className="hover:text-gradient-primary transition font-medium">Discover</Link>
+            <Link to="/connections" className="hover:text-gradient-primary transition font-medium">Connections</Link>
+            <Link to="/messages" className="hover:text-gradient-primary transition font-medium">Messages</Link>
+            <Link to="/profile" className="hover:text-gradient-primary transition font-medium">Profile</Link>
           </div>
         </nav>
       </header>
 
       {/* Main Content */}
-      <div className="mx-auto max-w-4xl px-6 py-8">
+      <div className="mx-auto max-w-4xl px-6 py-8 relative z-10">
         {/* Profile Header */}
-        <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-white/5 to-purple-500/5 backdrop-blur-sm p-8 mb-6 shadow-xl">
+        <div className="rounded-3xl border-2 border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-cyan-500/20 backdrop-blur-md p-8 mb-6 shadow-2xl glow-purple">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-6">
             <div className="flex items-start gap-6 w-full md:w-auto">
               {/* Avatar */}
@@ -144,7 +210,6 @@ export default function Profile() {
               <div className="flex gap-3 flex-shrink-0">
                 <Link
                   to="/edit-profile"
-                  onClick={() => posthog.capture('edit_profile_clicked', { location: 'profile_page' })}
                   className="rounded-2xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-medium hover:bg-white/10 hover:border-white/30 transition-all duration-200 flex items-center gap-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -163,20 +228,47 @@ export default function Profile() {
                 </button>
               </div>
             ) : (
-              <Link
-                to="/messages"
-                onClick={() => posthog.capture('send_message_clicked', { 
-                  location: 'profile_page',
-                  recipient_id: profile?.id,
-                  recipient_role: profile?.role
-                })}
-                className="rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-500 text-black px-8 py-3 text-sm font-semibold hover:from-emerald-500 hover:to-emerald-600 transition-all duration-200 shadow-lg hover:shadow-emerald-400/20 flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                Send Message
-              </Link>
+              <div className="flex flex-col sm:flex-row gap-3 flex-shrink-0">
+                {!isBlocked ? (
+                  <>
+                    <Link
+                      to="/messages"
+                      className="rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-500 text-black px-8 py-3 text-sm font-semibold hover:from-emerald-500 hover:to-emerald-600 transition-all duration-200 shadow-lg hover:shadow-emerald-400/20 flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      Send Message
+                    </Link>
+                    <button
+                      onClick={handleBlock}
+                      disabled={blocking}
+                      className="rounded-2xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-medium hover:bg-white/10 hover:border-white/30 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                      </svg>
+                      {blocking ? 'Blocking...' : 'Block'}
+                    </button>
+                    <button
+                      onClick={() => setShowReportModal(true)}
+                      className="rounded-2xl border border-rose-400/30 bg-rose-400/10 px-6 py-3 text-sm font-medium text-rose-300 hover:bg-rose-400/20 hover:border-rose-400/50 transition-all duration-200 flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      Report
+                    </button>
+                  </>
+                ) : (
+                  <div className="rounded-2xl border border-rose-400/30 bg-rose-400/10 px-8 py-3 text-sm font-medium text-rose-300 flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                    </svg>
+                    User Blocked
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -234,9 +326,9 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* Experience & Social */}
+          {/* Experience & Social */}
         {(profile?.skillLevel || profile?.yearsExperience || profile?.instagram || profile?.website) && (
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 to-white/5 backdrop-blur-sm p-8 mb-6 shadow-lg">
+          <div className="rounded-3xl border-2 border-cyan-400/30 bg-gradient-to-br from-cyan-500/20 via-purple-500/20 to-pink-500/20 backdrop-blur-md p-8 mb-6 shadow-xl glow-cyan">
             <h3 className="font-semibold text-xl mb-6 flex items-center gap-2">
               <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -306,7 +398,7 @@ export default function Profile() {
 
         {/* Gear & Specialties */}
         {(profile?.gear?.length > 0 || profile?.specialties?.length > 0 || profile?.photographyStyles?.length > 0 || profile?.lookingFor?.length > 0) && (
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 to-white/5 backdrop-blur-sm p-8 mb-6 shadow-lg space-y-8">
+          <div className="rounded-3xl border-2 border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-emerald-500/20 backdrop-blur-md p-8 mb-6 shadow-xl glow-purple space-y-8">
             {profile?.gear?.length > 0 && (
               <div>
                 <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
@@ -395,7 +487,7 @@ export default function Profile() {
 
         {/* Portfolio */}
         {profile?.portfolioImages?.length > 0 && (
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 to-white/5 backdrop-blur-sm p-8 shadow-lg">
+          <div className="rounded-3xl border-2 border-emerald-400/30 bg-gradient-to-br from-emerald-500/20 via-purple-500/20 to-cyan-500/20 backdrop-blur-md p-8 shadow-xl glow-emerald">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-semibold text-xl flex items-center gap-2">
                 <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -482,7 +574,7 @@ export default function Profile() {
 
         {/* Empty State */}
         {!profile?.profileComplete && isOwnProfile && (
-          <div className="text-center py-16 rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 to-white/5 backdrop-blur-sm shadow-lg">
+          <div className="text-center py-16 rounded-3xl border-2 border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-cyan-500/20 backdrop-blur-md shadow-lg glow-purple">
             <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-purple-400/20 to-emerald-400/20 border border-white/10 flex items-center justify-center">
               <svg className="w-12 h-12 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
@@ -505,6 +597,17 @@ export default function Profile() {
           </div>
         )}
       </div>
+      </div>
+
+      {/* Report Modal */}
+      {profile && (
+        <ReportModal
+          isOpen={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          reportedUserId={profile.id}
+          reportedUserName={profile.displayName || 'User'}
+        />
+      )}
     </div>
   );
 }

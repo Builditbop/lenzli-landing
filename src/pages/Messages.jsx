@@ -4,7 +4,8 @@ import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { uploadMessageImage } from '../utils/nsfwDetection';
-import posthog from '../config/posthog';
+import { blockUser, isUserBlocked, filterBlockedUsers } from '../utils/safety';
+import ReportModal from '../components/ReportModal';
 
 export default function Messages() {
   const { currentUser } = useAuth();
@@ -18,6 +19,10 @@ export default function Messages() {
   const [error, setError] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [otherUserTyping, setOtherUserTyping] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [blocking, setBlocking] = useState(false);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -25,9 +30,54 @@ export default function Messages() {
 
   useEffect(() => {
     fetchConnections();
-    // Track messages page view
-    posthog.capture('messages_page_viewed');
   }, [currentUser]);
+
+  useEffect(() => {
+    if (selectedChat && currentUser?.uid) {
+      checkIfBlocked();
+    }
+  }, [selectedChat, currentUser]);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showMenu && !event.target.closest('.relative')) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showMenu]);
+
+  const checkIfBlocked = async () => {
+    if (!selectedChat || !currentUser?.uid) return;
+    try {
+      const blocked = await isUserBlocked(currentUser.uid, selectedChat.creatorId);
+      setIsBlocked(blocked);
+    } catch (error) {
+      console.error('Error checking if user is blocked:', error);
+    }
+  };
+
+  const handleBlock = async () => {
+    if (!selectedChat) return;
+    
+    if (!window.confirm(`Are you sure you want to block ${selectedChat.creator.displayName}? You won't be able to see their profile or receive messages from them.`)) {
+      return;
+    }
+
+    setBlocking(true);
+    try {
+      await blockUser(currentUser.uid, selectedChat.creatorId);
+      setIsBlocked(true);
+      setShowMenu(false);
+    } catch (error) {
+      console.error('Error blocking user:', error);
+      alert('Failed to block user. Please try again.');
+    } finally {
+      setBlocking(false);
+    }
+  };
 
   useEffect(() => {
     if (!selectedChat) {
@@ -119,9 +169,11 @@ export default function Messages() {
         }
       }
 
-      setConnections(connectionsData);
-      if (connectionsData.length > 0) {
-        setSelectedChat(connectionsData[0]);
+      // Filter out blocked users
+      const filteredConnections = await filterBlockedUsers(currentUser.uid, connectionsData);
+      setConnections(filteredConnections);
+      if (filteredConnections.length > 0) {
+        setSelectedChat(filteredConnections[0]);
       }
     } catch (error) {
       console.error('Error fetching connections:', error);
@@ -300,15 +352,6 @@ export default function Messages() {
         readAt: {} // Object mapping userId to read timestamp
       });
 
-      // Track message sent event
-      posthog.capture('message_sent', {
-        chat_id: selectedChat.chatId,
-        recipient_id: selectedChat.creatorId,
-        has_text: !!newMessage.trim(),
-        has_image: !!imageUrl,
-        message_length: newMessage.trim().length
-      });
-
       // Reset form
       setNewMessage('');
       removeImagePreview();
@@ -329,36 +372,97 @@ export default function Messages() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-black flex items-center justify-center">
-        <div className="text-white">Loading messages...</div>
+      <div className="h-screen bg-gradient-vibrant text-white flex flex-col relative overflow-hidden">
+        {/* Animated background blobs */}
+        <div className="absolute inset-0 bg-gradient-mesh opacity-60" />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/30 rounded-full blur-3xl animate-blob" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-500/30 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }} />
+        <div className="relative z-10 flex flex-col h-full">
+          {/* Header Skeleton */}
+          <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-gradient-to-r from-purple-900/80 via-pink-900/80 to-cyan-900/80 border-b-2 border-purple-400/30 flex-shrink-0">
+            <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+              <div className="h-6 w-24 bg-white/10 rounded animate-pulse" />
+              <div className="flex items-center gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-4 w-16 bg-white/10 rounded animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+                ))}
+              </div>
+            </nav>
+          </header>
+
+          {/* Main Content Skeleton */}
+          <div className="flex-1 flex overflow-hidden relative z-10">
+            {/* Conversations List Skeleton */}
+            <div className="w-80 border-r-2 border-purple-400/30 bg-gradient-to-b from-purple-500/10 via-pink-500/10 to-cyan-500/10 backdrop-blur-md">
+              <div className="p-4 border-b-2 border-purple-400/30">
+                <div className="h-6 w-32 bg-white/10 rounded animate-pulse mb-2" />
+                <div className="h-4 w-24 bg-white/10 rounded animate-pulse" />
+              </div>
+              <div className="p-4 space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-3 p-3">
+                    <div className="w-12 h-12 rounded-full bg-white/10 animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+                    <div className="flex-1">
+                      <div className="h-4 w-24 bg-white/10 rounded animate-pulse mb-2" />
+                      <div className="h-3 w-32 bg-white/10 rounded animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Chat Area Skeleton */}
+            <div className="flex-1 flex flex-col">
+              <div className="p-4 border-b-2 border-purple-400/30">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-white/10 animate-pulse" />
+                  <div className="flex-1">
+                    <div className="h-5 w-32 bg-white/10 rounded animate-pulse mb-2" />
+                    <div className="h-3 w-24 bg-white/10 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 p-6 space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className={`flex ${i % 2 === 0 ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`h-16 w-48 bg-white/10 rounded-2xl animate-pulse`} style={{ animationDelay: `${i * 150}ms` }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen bg-gradient-to-b from-black via-gray-900 to-black text-white flex flex-col">
+    <div className="h-screen bg-gradient-vibrant text-white flex flex-col relative overflow-hidden">
+      {/* Animated background blobs */}
+      <div className="absolute inset-0 bg-gradient-mesh opacity-60" />
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/30 rounded-full blur-3xl animate-blob" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-500/30 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }} />
+      <div className="relative z-10 flex flex-col h-full">
       {/* Header */}
-      <header className="border-b border-white/10 bg-black/60 backdrop-blur sticky top-0 z-40 flex-shrink-0">
+      <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-gradient-to-r from-purple-900/80 via-pink-900/80 to-cyan-900/80 border-b-2 border-purple-400/30 flex-shrink-0">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
-            <Link to="/discover" className="text-xl font-semibold hover:opacity-80 transition">
-              Lenzli
-            </Link>
+            <Link to="/discover" className="text-xl font-bold text-gradient-primary">Lenzli</Link>
           </div>
-          <div className="flex items-center gap-4 text-sm">
-            <Link to="/discover" className="hover:text-white/80 transition">Discover</Link>
-            <Link to="/connections" className="hover:text-white/80 transition">Connections</Link>
-            <Link to="/messages" className="hover:text-white/80 transition font-medium text-emerald-400">Messages</Link>
-            <Link to="/profile" className="hover:text-white/80 transition">Profile</Link>
+          <div className="flex items-center gap-4 text-sm text-white/90">
+            <Link to="/discover" className="hover:text-gradient-primary transition font-medium">Discover</Link>
+            <Link to="/connections" className="hover:text-gradient-primary transition font-medium">Connections</Link>
+            <Link to="/messages" className="hover:text-gradient-primary transition font-medium text-gradient-primary">Messages</Link>
+            <Link to="/profile" className="hover:text-gradient-primary transition font-medium">Profile</Link>
           </div>
         </nav>
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative z-10">
         {/* Conversations List */}
-        <div className="w-80 border-r border-white/10 bg-gradient-to-b from-white/5 to-white/5 backdrop-blur-sm overflow-y-auto">
-          <div className="p-4 border-b border-white/10 bg-white/5">
+        <div className="w-80 border-r-2 border-purple-400/30 bg-gradient-to-b from-purple-500/10 via-pink-500/10 to-cyan-500/10 backdrop-blur-md overflow-y-auto">
+          <div className="p-4 border-b-2 border-purple-400/30 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-sm">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -387,15 +491,9 @@ export default function Messages() {
                   key={connection.id}
                   onClick={() => {
                     setSelectedChat(connection);
-                    // Track chat opened event
-                    posthog.capture('chat_opened', {
-                      chat_id: connection.chatId,
-                      recipient_id: connection.creatorId,
-                      recipient_role: connection.creator?.role
-                    });
                   }}
                   className={`w-full p-4 text-left hover:bg-white/10 transition-all duration-200 ${
-                    selectedChat?.id === connection.id ? 'bg-gradient-to-r from-emerald-400/10 to-emerald-500/5 border-l-2 border-emerald-400' : ''
+                    selectedChat?.id === connection.id ? 'bg-gradient-to-r from-emerald-400/20 via-purple-400/10 to-emerald-500/10 border-l-4 border-emerald-400 shadow-lg shadow-emerald-400/10' : ''
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -422,7 +520,7 @@ export default function Messages() {
         {selectedChat ? (
           <div className="flex-1 flex flex-col">
             {/* Chat Header */}
-            <div className="p-4 border-b border-white/10 bg-gradient-to-r from-white/5 to-white/5 backdrop-blur-sm">
+            <div className="p-4 border-b-2 border-purple-400/30 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-cyan-500/20 backdrop-blur-sm">
               <div className="flex items-center gap-3">
                 <div
                   className="w-12 h-12 rounded-full bg-cover bg-center ring-2 ring-emerald-400/20"
@@ -435,6 +533,63 @@ export default function Messages() {
                 <div className="flex-1">
                   <div className="font-semibold text-lg">{selectedChat.creator.displayName}</div>
                   <div className="text-xs text-emerald-400/80">{selectedChat.creator.role}</div>
+                </div>
+                <div className="relative">
+                  <button
+                    onClick={() => setShowMenu(!showMenu)}
+                    className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center transition-all hover:scale-110"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                    </svg>
+                  </button>
+                  {showMenu && (
+                    <div className="absolute right-0 top-12 w-48 rounded-xl border border-white/10 bg-gradient-to-br from-gray-900 to-black shadow-2xl overflow-hidden z-50">
+                      <Link
+                        to={`/profile/${selectedChat.creatorId}`}
+                        onClick={() => setShowMenu(false)}
+                        className="block px-4 py-3 hover:bg-white/10 transition-all flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        View Profile
+                      </Link>
+                      {!isBlocked ? (
+                        <>
+                          <button
+                            onClick={handleBlock}
+                            disabled={blocking}
+                            className="w-full text-left px-4 py-3 hover:bg-white/10 transition-all flex items-center gap-2 disabled:opacity-50"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                            </svg>
+                            {blocking ? 'Blocking...' : 'Block User'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowReportModal(true);
+                              setShowMenu(false);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-white/10 transition-all flex items-center gap-2 text-rose-300"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            Report User
+                          </button>
+                        </>
+                      ) : (
+                        <div className="px-4 py-3 text-rose-300/70 text-sm flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                          </svg>
+                          User Blocked
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -460,8 +615,8 @@ export default function Messages() {
                       <div
                         className={`max-w-xs md:max-w-md px-4 py-2 rounded-2xl ${
                           message.senderId === currentUser.uid
-                            ? 'bg-emerald-400 text-black'
-                            : 'bg-white/10 text-white'
+                            ? 'bg-gradient-to-r from-emerald-400 to-emerald-500 text-black shadow-lg shadow-emerald-400/20'
+                            : 'bg-gradient-to-r from-white/10 to-white/5 text-white border border-white/10'
                         }`}
                       >
                       {message.imageUrl && (
@@ -539,7 +694,17 @@ export default function Messages() {
             </div>
 
             {/* Message Input */}
-            <form onSubmit={sendMessage} className="p-4 border-t border-white/10 bg-gradient-to-r from-white/5 to-white/5 backdrop-blur-sm">
+            {isBlocked ? (
+              <div className="p-4 border-t-2 border-purple-400/30 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-sm">
+                <div className="p-4 bg-rose-400/10 border border-rose-400/30 rounded-xl text-sm text-rose-300 flex items-center gap-2">
+                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                  <span>This user is blocked. You cannot send messages.</span>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={sendMessage} className="p-4 border-t-2 border-purple-400/30 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-sm">
               {error && (
                 <div className="mb-3 p-3 bg-red-500/20 border border-red-500/50 rounded-xl text-sm text-red-300 flex items-center gap-2">
                   <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -619,6 +784,7 @@ export default function Messages() {
                 </button>
               </div>
             </form>
+            )}
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-white/60">
@@ -632,6 +798,17 @@ export default function Messages() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Report Modal */}
+      {selectedChat && (
+        <ReportModal
+          isOpen={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          reportedUserId={selectedChat.creatorId}
+          reportedUserName={selectedChat.creator.displayName || 'User'}
+        />
+      )}
       </div>
     </div>
   );
