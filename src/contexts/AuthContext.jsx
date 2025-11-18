@@ -11,8 +11,7 @@ import {
   confirmPasswordReset
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../config/firebase';
-import posthog from '../config/posthog';
+import { auth, db, isFirebaseConfigured, getFirebaseConfigError } from '../config/firebase';
 
 const AuthContext = createContext(null);
 
@@ -31,6 +30,11 @@ export const AuthProvider = ({ children }) => {
 
   // Sign up with email and password
   const signup = async (email, password, displayName) => {
+    if (!isFirebaseConfigured()) {
+      const errorMsg = getFirebaseConfigError() || 'Firebase is not configured. Please check your .env file and restart the development server.';
+      throw new Error(errorMsg);
+    }
+    
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(userCredential.user, { displayName });
     
@@ -48,11 +52,20 @@ export const AuthProvider = ({ children }) => {
 
   // Sign in with email and password
   const login = (email, password) => {
+    if (!isFirebaseConfigured()) {
+      const errorMsg = getFirebaseConfigError() || 'Firebase is not configured. Please check your .env file and restart the development server.';
+      return Promise.reject(new Error(errorMsg));
+    }
     return signInWithEmailAndPassword(auth, email, password);
   };
 
   // Sign in with Google
   const signInWithGoogle = async () => {
+    if (!isFirebaseConfigured()) {
+      const errorMsg = getFirebaseConfigError() || 'Firebase is not configured. Please check your .env file and restart the development server.';
+      throw new Error(errorMsg);
+    }
+    
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({
@@ -87,22 +100,38 @@ export const AuthProvider = ({ children }) => {
 
   // Logout
   const logout = () => {
+    if (!isFirebaseConfigured()) {
+      const errorMsg = getFirebaseConfigError() || 'Firebase is not configured. Please check your .env file and restart the development server.';
+      return Promise.reject(new Error(errorMsg));
+    }
     return signOut(auth);
   };
 
   // Send password reset email
   const resetPassword = (email) => {
+    if (!isFirebaseConfigured()) {
+      const errorMsg = getFirebaseConfigError() || 'Firebase is not configured. Please check your .env file and restart the development server.';
+      return Promise.reject(new Error(errorMsg));
+    }
     return sendPasswordResetEmail(auth, email);
   };
 
   // Confirm password reset (used when user clicks link in email)
   const confirmResetPassword = (oobCode, newPassword) => {
+    if (!isFirebaseConfigured()) {
+      const errorMsg = getFirebaseConfigError() || 'Firebase is not configured. Please check your .env file and restart the development server.';
+      return Promise.reject(new Error(errorMsg));
+    }
     return confirmPasswordReset(auth, oobCode, newPassword);
   };
 
   // Fetch user profile from Firestore
   const fetchUserProfile = async (uid) => {
     if (!uid) return null;
+    if (!isFirebaseConfigured()) {
+      console.warn('Firebase is not configured. Cannot fetch user profile.');
+      return null;
+    }
     const docRef = doc(db, 'users', uid);
     const docSnap = await getDoc(docRef);
     return docSnap.exists() ? docSnap.data() : null;
@@ -110,22 +139,19 @@ export const AuthProvider = ({ children }) => {
 
   // Listen to auth state changes
   useEffect(() => {
+    if (!isFirebaseConfigured()) {
+      // If Firebase is not configured, set loading to false and don't set up listener
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user) {
         const profile = await fetchUserProfile(user.uid);
         setUserProfile(profile);
-        
-        // Identify user in PostHog (if initialized)
-        posthog.identify(user.uid, {
-          email: user.email,
-          name: user.displayName || profile?.displayName,
-          createdAt: profile?.createdAt
-        });
       } else {
         setUserProfile(null);
-        // Reset PostHog identification on logout (if initialized)
-        posthog.reset();
       }
       setLoading(false);
     });
@@ -143,7 +169,8 @@ export const AuthProvider = ({ children }) => {
     fetchUserProfile,
     resetPassword,
     confirmResetPassword,
-    loading
+    loading,
+    isFirebaseConfigured: isFirebaseConfigured()
   };
 
   return (

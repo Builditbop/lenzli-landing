@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { collection, addDoc } from "firebase/firestore";
-import { db } from "../config/firebase";
-import posthog from "../config/posthog";
+import { db, isFirebaseConfigured, getFirebaseConfigError } from "../config/firebase";
 
 // Lightweight, dependency-free animations via CSS keyframes.
 
@@ -12,15 +11,19 @@ export default function LenzliLanding() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
-    useEffect(() => {
-      // Track landing page view
-      posthog.capture('landing_page_viewed');
-    }, []);
 
     const handleSubmit = async (e) => {
       e.preventDefault();
       setLoading(true);
       setError("");
+
+      // Check if Firebase is configured before attempting to save
+      if (!isFirebaseConfigured()) {
+        const errorMsg = getFirebaseConfigError() || 'Firebase is not configured. Please check your .env file and restart the development server.';
+        setError(errorMsg);
+        setLoading(false);
+        return;
+      }
 
       console.log("Attempting to save email to waitlist..."); // Debug log
 
@@ -33,23 +36,11 @@ export default function LenzliLanding() {
         });
         console.log("Email saved successfully!"); // Debug log
         
-        // Track waitlist signup
-        posthog.capture('waitlist_signup', {
-          source: 'landing_page',
-          email_domain: email.split('@')[1] || 'unknown'
-        });
-        
         setSubmitted(true);
         setEmail("");
       } catch (err) {
         console.error("Error saving email:", err);
         console.error("Error details:", err.code, err.message); // More debug info
-        
-        // Track waitlist signup error
-        posthog.capture('waitlist_signup_failed', {
-          error: err.message,
-          error_code: err.code
-        });
         
         setError(`Error: ${err.message || "Something went wrong. Please try again."}`);
       } finally {
@@ -58,7 +49,13 @@ export default function LenzliLanding() {
     };
 
     return (
-      <div className="min-h-screen bg-black text-white">
+      <div className="min-h-screen bg-gradient-vibrant text-white relative overflow-hidden">
+        {/* Animated background blobs */}
+        <div className="absolute inset-0 bg-gradient-mesh opacity-40" />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-blob" />
+        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }} />
+        <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-purple-500/15 rounded-full blur-3xl animate-blob" style={{ animationDelay: '4s' }} />
+        <div className="relative z-10">
         {/* Inline CSS for safe animations and shapes */}
         <style>{`
           :root { --card-radius: 24px; }
@@ -91,29 +88,27 @@ export default function LenzliLanding() {
         `}</style>
 
         {/* Navbar */}
-        <header className="sticky top-0 z-40 w-full backdrop-blur bg-black/60 border-b border-white/10">
+        <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-gradient-to-r from-purple-900/80 via-purple-800/80 to-purple-900/80 border-b border-purple-500/50">
           <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
             <div className="flex items-center gap-2">
               <Logo />
-              <span className="text-xl font-semibold tracking-tight">Lenzli</span>
+              <span className="text-xl font-semibold tracking-tight text-gradient-primary">Lenzli</span>
             </div>
-            <div className="hidden md:flex items-center gap-6 text-sm text-white/80">
-              <a href="#features" className="hover:text-white">Features</a>
-              <a href="#how" className="hover:text-white">How it works</a>
-              <a href="#faq" className="hover:text-white">FAQ</a>
+            <div className="hidden md:flex items-center gap-6 text-sm text-white/90">
+              <a href="#features" className="hover:text-gradient-primary transition">Features</a>
+              <a href="#how" className="hover:text-gradient-primary transition">How it works</a>
+              <a href="#faq" className="hover:text-gradient-primary transition">FAQ</a>
             </div>
             <div className="flex items-center gap-3">
               <Link 
                 to="/login" 
-                onClick={() => posthog.capture('cta_clicked', { cta_type: 'login', location: 'navbar' })}
-                className="hidden sm:inline-block rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10 transition"
+                className="hidden sm:inline-block rounded-2xl border-2 border-purple-300/90 bg-purple-400/50 px-4 py-2 text-sm font-medium hover:bg-purple-400/60 hover:border-purple-300 transition-all glow-purple text-white"
               >
                 Log In
               </Link>
               <Link 
                 to="/signup" 
-                onClick={() => posthog.capture('cta_clicked', { cta_type: 'signup', location: 'navbar' })}
-                className="rounded-2xl bg-white text-black px-4 py-2 text-sm font-medium hover:bg-white/90 transition"
+                className="rounded-2xl bg-gradient-primary text-white px-4 py-2 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple"
               >
                 Sign Up
               </Link>
@@ -123,25 +118,22 @@ export default function LenzliLanding() {
 
         {/* Hero */}
         <section className="relative overflow-hidden">
-          <div className="absolute -top-40 left-1/2 h-96 w-[80rem] -translate-x-1/2 rounded-full bg-gradient-to-b from-white/25 to-transparent blur-2xl" />
-          <div className="absolute inset-0 bg-grid opacity-40" />
-
           <div className="mx-auto max-w-7xl px-6 pt-20 pb-24 md:pt-28 md:pb-32">
             <div className="grid items-center gap-12 md:grid-cols-2">
               <div className="space-y-6">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
+                <div className="inline-flex items-center gap-2 rounded-full border-2 border-purple-500/50 bg-gradient-to-r from-purple-500/30 to-purple-600/30 px-4 py-2 text-xs font-medium text-white backdrop-blur-sm glow-purple">
                   <Sparkles />
                   New • Network for photographers & filmmakers
                 </div>
-                <h1 className="text-4xl md:text-6xl font-semibold tracking-tight leading-[1.1]">
-                  Connect. Collaborate. <span className="text-transparent bg-clip-text bg-gradient-to-r from-white to-white/50">Create.</span>
+                <h1 className="text-4xl md:text-6xl font-bold tracking-tight leading-[1.1]">
+                  Connect. Collaborate. <span className="text-gradient-primary">Create.</span>
                 </h1>
-                <p className="text-white/70 text-lg max-w-prose">
+                <p className="text-white/90 text-lg max-w-prose font-medium">
                   Lenzli helps image-makers discover each other by style and interests, find real-time help on shoots, and build crews by location, genre, and gear — all in one community.
                 </p>
                 <div id="join" className="w-full max-w-md">
                   {error && (
-                    <div className="mb-3 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-300">
+                    <div className="mb-3 rounded-2xl border-2 border-rose-400/50 bg-rose-500/20 px-4 py-3 text-sm text-rose-200 backdrop-blur-sm glow-pink">
                       {error}
                     </div>
                   )}
@@ -154,24 +146,24 @@ export default function LenzliLanding() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         disabled={loading}
-                        className="flex-1 rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none placeholder-white/40 focus:ring-2 focus:ring-white/20 disabled:opacity-50"
+                        className="flex-1 rounded-2xl bg-white/15 border-2 border-purple-300/70 px-4 py-3 text-sm outline-none placeholder-white/60 focus:ring-2 focus:ring-purple-300/80 focus:border-purple-300/90 backdrop-blur-sm disabled:opacity-50"
                       />
                       <button 
                         disabled={loading}
-                        className="rounded-2xl bg-white text-black px-5 py-3 text-sm font-medium hover:bg-white/90 transition disabled:opacity-50"
+                        className="rounded-2xl bg-gradient-primary text-white px-5 py-3 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple disabled:opacity-50"
                       >
                         {loading ? 'Saving...' : 'Join waitlist'}
                       </button>
                     </form>
                   ) : (
-                    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-300">
+                    <div className="rounded-2xl border-2 border-emerald-400/50 bg-emerald-500/20 px-4 py-3 text-sm text-emerald-200 backdrop-blur-sm glow-emerald">
                       ✓ You're on the list! We'll email you when Lenzli is ready.
                     </div>
                   )}
                   <div className="mt-3 text-center">
-                    <p className="text-xs text-white/50">
+                    <p className="text-xs text-white/70">
                       Already have an account?{' '}
-                      <Link to="/login" className="text-white/80 hover:text-white underline">
+                      <Link to="/login" className="text-gradient-primary font-semibold hover:opacity-80">
                         Log in
                       </Link>
                     </p>
@@ -188,12 +180,12 @@ export default function LenzliLanding() {
         </section>
 
         {/* Logos / Social proof */}
-        <section className="border-y border-white/10 bg-white/5">
+        <section className="border-y-2 border-purple-500/50 bg-gradient-to-r from-purple-900/40 via-purple-800/40 to-purple-900/40 backdrop-blur-sm">
           <div className="mx-auto max-w-7xl px-6 py-10 md:py-14">
-            <p className="text-center text-xs uppercase tracking-[0.2em] text-white/50 mb-6">Trusted by visual creators from</p>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-6 opacity-70">
+            <p className="text-center text-xs uppercase tracking-[0.2em] text-white/70 mb-6 font-semibold">Trusted by visual creators from</p>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
               {['Unsplash','Behance','Dribbble','TikTok','Instagram'].map((brand) => (
-                <div key={brand} className="flex items-center justify-center rounded-xl border border-white/10 bg-black/40 py-3 text-sm">{brand}</div>
+                <div key={brand} className="flex items-center justify-center rounded-xl border-2 border-purple-300/80 bg-white/15 py-3 text-sm font-medium text-white backdrop-blur-sm hover:border-purple-300 hover:bg-white/20 transition-all">{brand}</div>
               ))}
             </div>
           </div>
@@ -202,8 +194,8 @@ export default function LenzliLanding() {
         {/* Features */}
         <section id="features" className="mx-auto max-w-7xl px-6 py-20 md:py-28">
           <div className="mx-auto max-w-2xl text-center mb-14">
-            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">Built for creators — not dating</h2>
-            <p className="mt-3 text-white/70">Discover styles, find collaborators, and get help — fast.</p>
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-gradient-primary">Built for creators — not dating</h2>
+            <p className="mt-3 text-white/80 text-lg">Discover styles, find collaborators, and get help — fast.</p>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
             <FeatureCard title="Swipe to discover" desc="Quickly browse work by genre and vibe. Save creators you want to connect with." icon={<SwipeIcon />} />
@@ -214,7 +206,7 @@ export default function LenzliLanding() {
 
         {/* Stats Section */}
         <section className="mx-auto max-w-7xl px-6 pb-20">
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent p-8 md:p-12">
+          <div className="rounded-3xl border-2 border-purple-300/80 bg-white/15 backdrop-blur-md p-8 md:p-12 shadow-2xl glow-purple">
             <div className="grid gap-8 md:grid-cols-4 text-center">
               <StatCard number="10K+" label="Active Creators" />
               <StatCard number="50K+" label="Collaborations" />
@@ -227,8 +219,8 @@ export default function LenzliLanding() {
         {/* Testimonials */}
         <section className="mx-auto max-w-7xl px-6 pb-20 md:pb-28">
           <div className="mx-auto max-w-2xl text-center mb-14">
-            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">Loved by creators worldwide</h2>
-            <p className="mt-3 text-white/70">See what photographers and filmmakers are saying</p>
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-gradient-secondary">Loved by creators worldwide</h2>
+            <p className="mt-3 text-white/80 text-lg">See what photographers and filmmakers are saying</p>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
             <TestimonialCard 
@@ -254,9 +246,9 @@ export default function LenzliLanding() {
 
         {/* How it works */}
         <section id="how" className="mx-auto max-w-7xl px-6 pb-16 md:pb-24">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8 md:p-12">
+          <div className="rounded-3xl border-2 border-purple-500/50 bg-gradient-to-br from-purple-500/30 via-purple-600/25 to-purple-500/30 backdrop-blur-md p-8 md:p-12 shadow-2xl glow-purple">
             <div className="grid gap-10 md:grid-cols-3">
-              <Step n={1} title="Create your creator card" desc="Add sample shots, roles you do, gear, and where you’re based." />
+              <Step n={1} title="Create your creator card" desc="Add sample shots, roles you do, gear, and where you're based." />
               <Step n={2} title="Browse & connect" desc="Swipe to save work you like and send a quick connect to collaborate." />
               <Step n={3} title="Post or accept shoots" desc="Share what you need (time, location, role) and build a crew in minutes." />
             </div>
@@ -265,21 +257,19 @@ export default function LenzliLanding() {
 
         {/* CTA */}
         <section className="mx-auto max-w-7xl px-6 pb-24" id="download">
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 to-white/5 p-10 md:p-14 text-center">
-            <h3 className="text-3xl md:text-4xl font-semibold">Claim your handle</h3>
-            <p className="mt-3 text-white/70">Be part of the first wave of the Lenzli creator network.</p>
+          <div className="rounded-3xl border-2 border-purple-300/80 bg-white/15 backdrop-blur-md p-10 md:p-14 text-center shadow-2xl glow-purple">
+            <h3 className="text-3xl md:text-4xl font-bold text-gradient-secondary">Claim your handle</h3>
+            <p className="mt-3 text-white/80 text-lg">Be part of the first wave of the Lenzli creator network.</p>
             <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
               <Link 
                 to="/signup" 
-                onClick={() => posthog.capture('cta_clicked', { cta_type: 'signup', location: 'hero_section' })}
-                className="rounded-2xl bg-white text-black px-6 py-3 text-sm font-medium hover:bg-white/90 transition text-center"
+                className="rounded-2xl bg-gradient-primary text-white px-6 py-3 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple text-center"
               >
                 Sign Up Now
               </Link>
               <Link 
                 to="/login" 
-                onClick={() => posthog.capture('cta_clicked', { cta_type: 'login', location: 'hero_section' })}
-                className="rounded-2xl border border-white/15 bg-white/5 px-6 py-3 text-sm hover:bg-white/10 transition text-center"
+                className="rounded-2xl border-2 border-purple-400/50 bg-purple-500/20 px-6 py-3 text-sm font-medium hover:bg-purple-500/30 transition-all glow-purple text-center"
               >
                 Log In
               </Link>
@@ -289,31 +279,32 @@ export default function LenzliLanding() {
 
         {/* FAQ */}
         <section id="faq" className="mx-auto max-w-5xl px-6 pb-24">
-          <h4 className="text-2xl font-semibold mb-6">Frequently asked questions</h4>
-          <div className="divide-y divide-white/10 rounded-2xl border border-white/10 bg-white/5">
+          <h4 className="text-2xl font-bold mb-6 text-gradient-primary">Frequently asked questions</h4>
+          <div className="divide-y-2 divide-purple-500/30 rounded-2xl border-2 border-purple-500/50 bg-gradient-to-br from-purple-500/15 to-purple-600/15 backdrop-blur-md">
             <FAQ q="Who is Lenzli for?" a="Photographers, filmmakers, and visual creatives looking to find collaborators, crews, and community." />
             <FAQ q="How do connections work?" a="Save creators you like and send a quick connect. If they accept, you can chat, share briefs, and plan." />
             <FAQ q="Can I find help fast?" a="Yes — post a real-time ping with role, time, and location. Nearby creators get notified." />
-            <FAQ q="Is Lenzli free?" a="Core features are free. We’ll offer optional pro tools like boosted pings and advanced filters." />
-            <FAQ q="Does Lenzli support teams?" a="You can list roles you’re hiring for and build a roster by tags like gear, style, and availability." />
+            <FAQ q="Is Lenzli free?" a="Core features are free. We'll offer optional pro tools like boosted pings and advanced filters." />
+            <FAQ q="Does Lenzli support teams?" a="You can list roles you're hiring for and build a roster by tags like gear, style, and availability." />
           </div>
         </section>
 
         {/* Footer */}
-        <footer className="border-t border-white/10">
+        <footer className="border-t-2 border-purple-500/50 bg-gradient-to-r from-purple-900/60 via-purple-800/60 to-purple-900/60 backdrop-blur-md">
           <div className="mx-auto max-w-7xl px-6 py-10 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-white/70">
+            <div className="flex items-center gap-2 text-white/80">
               <Logo small />
-              <span>Lenzli © {new Date().getFullYear()}</span>
+              <span className="font-medium">Lenzli © {new Date().getFullYear()}</span>
             </div>
-            <div className="flex items-center gap-6 text-white/60 text-sm">
-              <a href="#" className="hover:text-white">Privacy</a>
-              <a href="#" className="hover:text-white">Terms</a>
-              <a href="#" className="hover:text-white">Safety</a>
-              <a href="#" className="hover:text-white">Contact</a>
+            <div className="flex items-center gap-6 text-white/70 text-sm">
+              <a href="#" className="hover:text-gradient-primary transition font-medium">Privacy</a>
+              <a href="#" className="hover:text-gradient-primary transition font-medium">Terms</a>
+              <a href="#" className="hover:text-gradient-primary transition font-medium">Safety</a>
+              <a href="#" className="hover:text-gradient-primary transition font-medium">Contact</a>
             </div>
           </div>
         </footer>
+        </div>
       </div>
     );
   }
@@ -330,17 +321,17 @@ export default function LenzliLanding() {
     }, []);
 
     return (
-      <div className="flex items-center gap-4 text-sm text-white/60">
+      <div className="flex items-center gap-4 text-sm text-white/80">
         <div className="flex -space-x-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <div 
               key={i} 
-              className="h-7 w-7 rounded-full border border-white/10 bg-gradient-to-br from-white/20 to-white/5 animate-pulse" 
+              className="h-7 w-7 rounded-full border-2 border-purple-400/50 bg-gradient-to-br from-purple-500/40 to-pink-500/40 animate-pulse glow-purple" 
               style={{ animationDelay: `${i * 0.2}s` }}
             />
           ))}
         </div>
-        <span className="font-medium">
+        <span className="font-semibold text-gradient-primary">
           {count.toLocaleString()}+ early signups
         </span>
       </div>
@@ -349,12 +340,12 @@ export default function LenzliLanding() {
 
   function FeatureCard({ title, desc, icon }) {
     return (
-      <div className="rounded-3xl border border-white/10 bg-white/5 p-6 md:p-8 hover:bg-white/10 transition-all duration-300">
-        <div className="mb-4 h-10 w-10 rounded-2xl border border-white/10 bg-white/10 flex items-center justify-center">
+      <div className="rounded-3xl border-2 border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-cyan-500/20 p-6 md:p-8 hover:from-purple-500/30 hover:via-pink-500/30 hover:to-cyan-500/30 hover:border-purple-400/50 transition-all duration-300 backdrop-blur-sm glow-purple">
+        <div className="mb-4 h-12 w-12 rounded-2xl border-2 border-purple-400/50 bg-gradient-primary flex items-center justify-center text-white">
           {icon}
         </div>
-        <h3 className="text-xl font-semibold">{title}</h3>
-        <p className="mt-2 text-white/70">{desc}</p>
+        <h3 className="text-xl font-bold text-gradient-primary">{title}</h3>
+        <p className="mt-2 text-white/80">{desc}</p>
       </div>
     );
   }
@@ -362,22 +353,22 @@ export default function LenzliLanding() {
   function StatCard({ number, label }) {
     return (
       <div className="space-y-2">
-        <div className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
+        <div className="text-3xl md:text-4xl font-bold text-gradient-primary">
           {number}
         </div>
-        <div className="text-sm text-white/60">{label}</div>
+        <div className="text-sm text-white/70 font-medium">{label}</div>
       </div>
     );
   }
 
   function TestimonialCard({ quote, author, role, location }) {
     return (
-      <div className="rounded-3xl border border-white/10 bg-white/5 p-6 md:p-8 space-y-4 hover:bg-white/10 transition-all duration-300">
-        <div className="text-white/20 text-4xl">"</div>
-        <p className="text-white/80 leading-relaxed">{quote}</p>
-        <div className="pt-2 border-t border-white/10">
-          <div className="font-semibold">{author}</div>
-          <div className="text-sm text-white/60">{role} • {location}</div>
+      <div className="rounded-3xl border-2 border-cyan-400/30 bg-gradient-to-br from-cyan-500/20 via-purple-500/20 to-pink-500/20 p-6 md:p-8 space-y-4 hover:from-cyan-500/30 hover:via-purple-500/30 hover:to-pink-500/30 hover:border-cyan-400/50 transition-all duration-300 backdrop-blur-sm glow-cyan">
+        <div className="text-gradient-secondary text-4xl font-bold">"</div>
+        <p className="text-white/90 leading-relaxed font-medium">{quote}</p>
+        <div className="pt-2 border-t-2 border-purple-400/20">
+          <div className="font-bold text-gradient-primary">{author}</div>
+          <div className="text-sm text-white/70">{role} • {location}</div>
         </div>
       </div>
     );
@@ -386,12 +377,12 @@ export default function LenzliLanding() {
   function Step({ n, title, desc }) {
     return (
       <div className="space-y-3">
-        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-white/80">{n}</span>
+        <div className="inline-flex items-center gap-2 rounded-full border-2 border-cyan-400/50 bg-gradient-to-r from-cyan-500/20 to-purple-500/20 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gradient-primary text-white font-bold">{n}</span>
           Step {n}
         </div>
-        <h4 className="text-lg font-semibold">{title}</h4>
-        <p className="text-white/70">{desc}</p>
+        <h4 className="text-lg font-bold text-gradient-primary">{title}</h4>
+        <p className="text-white/80">{desc}</p>
       </div>
     );
   }
@@ -401,10 +392,10 @@ export default function LenzliLanding() {
     return (
       <div className="p-5 sm:p-6">
         <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-left">
-          <span className="font-medium">{q}</span>
-          <span className="ml-4 text-white/60">{open ? "−" : "+"}</span>
+          <span className="font-semibold text-white/90">{q}</span>
+          <span className="ml-4 text-gradient-primary text-xl font-bold">{open ? "−" : "+"}</span>
         </button>
-        {open && <p className="mt-3 text-white/70">{a}</p>}
+        {open && <p className="mt-3 text-white/80">{a}</p>}
       </div>
     );
   }
@@ -554,12 +545,12 @@ export default function LenzliLanding() {
 
                 {/* Action badges */}
                 <div className="absolute left-4 top-4">
-                  <div className="badge border-2 border-emerald-400/70 text-emerald-300/90 -rotate-12 shadow-lg hover:scale-110 transition cursor-pointer">
+                  <div className="badge border-2 border-emerald-400 bg-gradient-to-r from-emerald-400 to-emerald-500 text-white -rotate-12 shadow-lg hover:scale-110 transition cursor-pointer glow-emerald">
                     CONNECT
                   </div>
                 </div>
                 <div className="absolute right-4 top-4">
-                  <div className="badge border-2 border-rose-400/70 text-rose-300/90 rotate-12 shadow-lg hover:scale-110 transition cursor-pointer">
+                  <div className="badge border-2 border-rose-400 bg-gradient-to-r from-rose-400 to-pink-500 text-white rotate-12 shadow-lg hover:scale-110 transition cursor-pointer glow-pink">
                     PASS
                   </div>
                 </div>
@@ -578,13 +569,13 @@ export default function LenzliLanding() {
                 <div className="absolute inset-x-0 bottom-0 p-4 flex items-center justify-center gap-4">
                   <button 
                     onClick={handlePass}
-                    className="h-12 w-12 rounded-full border border-rose-400/30 bg-black/60 backdrop-blur hover:bg-rose-400/10 hover:scale-110 transition-all flex items-center justify-center text-lg active:scale-95"
+                    className="h-12 w-12 rounded-full border-2 border-rose-400 bg-gradient-to-br from-rose-400 to-pink-500 text-white backdrop-blur hover:scale-110 transition-all flex items-center justify-center text-lg active:scale-95 glow-pink"
                   >
                     ✕
                   </button>
                   <button 
                     onClick={handleLike}
-                    className={`h-14 w-14 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white font-semibold hover:scale-110 transition-all shadow-lg flex items-center justify-center text-xl active:scale-95 ${
+                    className={`h-14 w-14 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white font-semibold hover:scale-110 transition-all shadow-lg flex items-center justify-center text-xl active:scale-95 glow-emerald ${
                       liked ? 'scale-125' : ''
                     }`}
                   >

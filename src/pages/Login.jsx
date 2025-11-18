@@ -1,34 +1,31 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import posthog from '../config/posthog';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, signInWithGoogle } = useAuth();
+  const { login, signInWithGoogle, fetchUserProfile, isFirebaseConfigured } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    
+    // Check Firebase configuration before attempting login
+    if (!isFirebaseConfigured) {
+      setError('Firebase is not configured. Please check your .env file and restart the development server.');
+      return;
+    }
+    
     setLoading(true);
 
     try {
       await login(email, password);
-      // Track login event
-      posthog.capture('login_successful', {
-        method: 'email'
-      });
       navigate('/discover');
     } catch (error) {
-      // Track login error
-      posthog.capture('login_failed', {
-        method: 'email',
-        error: error.message
-      });
       setError(error.message || 'Failed to log in');
     } finally {
       setLoading(false);
@@ -37,21 +34,27 @@ export default function Login() {
 
   const handleGoogleSignIn = async () => {
     setError('');
+    
+    // Check Firebase configuration before attempting Google sign-in
+    if (!isFirebaseConfigured) {
+      setError('Firebase is not configured. Please check your .env file and restart the development server.');
+      return;
+    }
+    
     setLoading(true);
 
     try {
-      await signInWithGoogle();
-      // Track Google login event
-      posthog.capture('login_successful', {
-        method: 'google'
-      });
-      navigate('/discover');
+      const result = await signInWithGoogle();
+      // Wait for profile to load and check completion status
+      const profile = await fetchUserProfile(result.user.uid);
+      
+      // Navigate based on profile completion status
+      if (!profile || !profile.profileComplete) {
+        navigate('/profile-setup');
+      } else {
+        navigate('/discover');
+      }
     } catch (error) {
-      // Track Google login error
-      posthog.capture('login_failed', {
-        method: 'google',
-        error: error.message
-      });
       setError(error.message || 'Failed to sign in with Google');
     } finally {
       setLoading(false);
@@ -59,45 +62,49 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center px-6">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-gradient-vibrant text-white flex items-center justify-center px-6 relative overflow-hidden">
+      {/* Animated background blobs */}
+      <div className="absolute inset-0 bg-gradient-mesh opacity-60" />
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/30 rounded-full blur-3xl animate-blob" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-500/30 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }} />
+      <div className="relative z-10 w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
           <Link to="/" className="inline-block">
-            <h1 className="text-3xl font-bold">Lenzli</h1>
-            <p className="text-white/60 text-sm mt-1">Welcome back, creator</p>
+            <h1 className="text-3xl font-bold text-gradient-primary">Lenzli</h1>
+            <p className="text-white/80 text-sm mt-1 font-medium">Welcome back, creator</p>
           </Link>
         </div>
 
         {/* Login Card */}
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
-          <h2 className="text-2xl font-semibold mb-6">Log in</h2>
+        <div className="rounded-3xl border-2 border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-cyan-500/20 backdrop-blur-md p-8 shadow-2xl glow-purple">
+          <h2 className="text-2xl font-bold mb-6 text-gradient-primary">Log in</h2>
 
           {error && (
-            <div className="mb-4 p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            <div className="mb-4 p-3 rounded-2xl border-2 border-rose-400/50 bg-rose-500/20 text-rose-200 text-sm backdrop-blur-sm glow-pink">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-white/70 mb-2">Email</label>
+              <label className="block text-sm text-white/80 mb-2 font-medium">Email</label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-white/20"
+                className="w-full rounded-2xl bg-white/10 border-2 border-purple-400/30 px-4 py-3 text-sm outline-none placeholder-white/50 focus:ring-2 focus:ring-purple-400/50 focus:border-purple-400/50 backdrop-blur-sm"
                 placeholder="you@example.com"
               />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm text-white/70">Password</label>
+                <label className="block text-sm text-white/80 font-medium">Password</label>
                 <Link
                   to="/forgot-password"
-                  className="text-sm text-white/70 hover:text-white hover:underline"
+                  className="text-sm text-gradient-primary hover:opacity-80 font-medium"
                 >
                   Forgot password?
                 </Link>
@@ -107,7 +114,7 @@ export default function Login() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-white/20"
+                className="w-full rounded-2xl bg-white/10 border-2 border-purple-400/30 px-4 py-3 text-sm outline-none placeholder-white/50 focus:ring-2 focus:ring-purple-400/50 focus:border-purple-400/50 backdrop-blur-sm"
                 placeholder="••••••••"
               />
             </div>
@@ -115,7 +122,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-2xl bg-white text-black px-4 py-3 text-sm font-medium hover:bg-white/90 transition disabled:opacity-50"
+              className="w-full rounded-2xl bg-gradient-primary text-white px-4 py-3 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple disabled:opacity-50"
             >
               {loading ? 'Logging in...' : 'Log in'}
             </button>
@@ -123,17 +130,17 @@ export default function Login() {
 
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-white/10"></div>
+              <div className="w-full border-t-2 border-purple-400/20"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-black text-white/60">Or continue with</span>
+              <span className="px-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-white/70 font-medium">Or continue with</span>
             </div>
           </div>
 
           <button
             onClick={handleGoogleSignIn}
             disabled={loading}
-            className="w-full rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium hover:bg-white/10 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full rounded-2xl border-2 border-purple-400/50 bg-purple-500/20 px-4 py-3 text-sm font-medium hover:bg-purple-500/30 hover:border-purple-400 transition-all glow-purple disabled:opacity-50 flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -144,16 +151,16 @@ export default function Login() {
             Sign in with Google
           </button>
 
-          <div className="mt-6 text-center text-sm text-white/70">
+          <div className="mt-6 text-center text-sm text-white/80">
             Don't have an account?{' '}
-            <Link to="/signup" className="text-white hover:underline font-medium">
+            <Link to="/signup" className="text-gradient-primary font-semibold hover:opacity-80">
               Sign up
             </Link>
           </div>
         </div>
 
         <div className="mt-6 text-center">
-          <Link to="/" className="text-sm text-white/60 hover:text-white">
+          <Link to="/" className="text-sm text-white/70 hover:text-gradient-primary transition font-medium">
             ← Back to home
           </Link>
         </div>
