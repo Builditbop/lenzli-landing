@@ -173,8 +173,8 @@ export default function SeedDatabase() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-yellow-400/20 bg-yellow-400/10 p-6">
-          <h3 className="font-semibold text-yellow-300 mb-2">⚠️ Important Notes:</h3>
+        <div className="rounded-3xl border border-blue-700/30 bg-blue-700/15 p-6">
+          <h3 className="font-semibold text-blue-300 mb-2">⚠️ Important Notes:</h3>
           <ul className="text-sm text-white/80 space-y-1">
             <li>• Demo profiles are marked with <code className="bg-white/10 px-1 rounded">isDemo: true</code></li>
             <li>• They won't interfere with real users</li>

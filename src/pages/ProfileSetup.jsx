@@ -4,7 +4,6 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { uploadMultipleImages } from '../utils/cloudinary';
-import posthog from '../config/posthog';
 
 export default function ProfileSetup() {
   const { currentUser } = useAuth();
@@ -66,21 +65,9 @@ export default function ProfileSetup() {
         ...prev,
         portfolioImages: [...prev.portfolioImages, ...urls].slice(0, 6)
       }));
-      
-      // Track image upload event
-      posthog.capture('image_uploaded', {
-        image_count: urls.length,
-        total_images: profileData.portfolioImages.length + urls.length,
-        context: 'profile_setup'
-      });
     } catch (err) {
       setError('Failed to upload images');
       console.error(err);
-      // Track upload error
-      posthog.capture('image_upload_failed', {
-        context: 'profile_setup',
-        error: err.message
-      });
     } finally {
       setLoading(false);
     }
@@ -99,27 +86,10 @@ export default function ProfileSetup() {
         updatedAt: new Date().toISOString()
       });
 
-      // Track profile completion event
-      posthog.capture('profile_completed', {
-        role: profileData.role,
-        gear_count: profileData.gear.length,
-        specialties_count: profileData.specialties.length,
-        photography_styles_count: profileData.photographyStyles.length,
-        portfolio_images_count: profileData.portfolioImages.length,
-        skill_level: profileData.skillLevel,
-        looking_for_count: profileData.lookingFor.length,
-        has_bio: !!profileData.bio,
-        has_location: !!profileData.location
-      });
-
       navigate('/discover');
     } catch (err) {
       setError('Failed to save profile');
       console.error(err);
-      // Track profile completion error
-      posthog.capture('profile_completion_failed', {
-        error: err.message
-      });
     } finally {
       setLoading(false);
     }
@@ -139,12 +109,17 @@ export default function ProfileSetup() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white px-6 py-12">
+      <div className="min-h-screen bg-gradient-vibrant text-white relative overflow-hidden">
+        {/* Animated background blobs */}
+        <div className="absolute inset-0 bg-gradient-mesh opacity-40" />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-blob" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }} />
+      <div className="relative z-10 px-6 py-12">
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold mb-2">Complete Your Profile</h1>
-          <p className="text-white/70">Step {step} of 4</p>
+          <h1 className="text-3xl font-bold mb-2 text-gradient-primary">Complete Your Profile</h1>
+          <p className="text-white/80 font-medium">Step {step} of 4</p>
           <div className="mt-4 flex gap-2 justify-center">
             {[1, 2, 3, 4].map((i) => (
               <div
@@ -158,14 +133,14 @@ export default function ProfileSetup() {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          <div className="mb-4 p-3 rounded-2xl border-2 border-rose-400/50 bg-rose-500/20 text-rose-200 text-sm backdrop-blur-sm glow-pink">
             {error}
           </div>
         )}
 
         {/* Step 1: Role */}
         {step === 1 && (
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <div className="rounded-3xl border-2 border-purple-300/80 bg-white/15 backdrop-blur-md p-8 glow-purple">
             <h2 className="text-2xl font-semibold mb-4">What's your role?</h2>
             <p className="text-white/70 mb-6">Choose your primary role</p>
 
@@ -174,10 +149,10 @@ export default function ProfileSetup() {
                 <button
                   key={role}
                   onClick={() => setProfileData({ ...profileData, role })}
-                  className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                  className={`rounded-2xl border-2 px-4 py-3 text-sm font-medium transition backdrop-blur-sm ${
                     profileData.role === role
-                      ? 'border-white bg-white text-black'
-                      : 'border-white/15 bg-white/5 hover:bg-white/10'
+                      ? 'border-purple-300 bg-purple-400/40 text-white shadow-lg glow-purple'
+                      : 'border-purple-300/60 bg-white/15 hover:bg-white/25 hover:border-purple-300/80'
                   }`}
                 >
                   {role}
@@ -187,7 +162,7 @@ export default function ProfileSetup() {
 
             <button
               onClick={nextStep}
-              className="w-full mt-6 rounded-2xl bg-white text-black px-4 py-3 text-sm font-medium hover:bg-white/90 transition"
+              className="w-full mt-6 rounded-2xl bg-gradient-primary text-white px-4 py-3 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple"
             >
               Continue
             </button>
@@ -196,7 +171,7 @@ export default function ProfileSetup() {
 
         {/* Step 2: Bio & Location */}
         {step === 2 && (
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <div className="rounded-3xl border-2 border-purple-500/50 bg-gradient-to-br from-purple-500/30 via-purple-600/30 to-purple-500/30 backdrop-blur-md p-8 glow-purple">
             <h2 className="text-2xl font-semibold mb-4">Tell us about yourself</h2>
             <p className="text-white/70 mb-6">Share your story and location</p>
 
@@ -206,7 +181,7 @@ export default function ProfileSetup() {
                 <textarea
                   value={profileData.bio}
                   onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
-                  className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-white/20 resize-none"
+                  className="w-full rounded-2xl bg-white/15 border-2 border-purple-300/70 px-4 py-3 text-sm outline-none placeholder-white/60 focus:ring-2 focus:ring-purple-300/80 focus:border-purple-300/90 backdrop-blur-sm resize-none"
                   rows="4"
                   placeholder="Tell other creators about your experience and style..."
                 />
@@ -218,7 +193,7 @@ export default function ProfileSetup() {
                   type="text"
                   value={profileData.location}
                   onChange={(e) => setProfileData({ ...profileData, location: e.target.value })}
-                  className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-white/20"
+                  className="w-full rounded-2xl bg-white/15 border-2 border-purple-300/70 px-4 py-3 text-sm outline-none placeholder-white/60 focus:ring-2 focus:ring-purple-300/80 focus:border-purple-300/90 backdrop-blur-sm"
                   placeholder="City, State or Country"
                 />
               </div>
@@ -227,13 +202,13 @@ export default function ProfileSetup() {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setStep(1)}
-                className="flex-1 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium hover:bg-white/10 transition"
+                className="flex-1 rounded-2xl border-2 border-purple-300/90 bg-purple-400/50 px-4 py-3 text-sm font-medium hover:bg-purple-400/60 hover:border-purple-300 transition-all glow-purple text-white"
               >
                 Back
               </button>
               <button
                 onClick={nextStep}
-                className="flex-1 rounded-2xl bg-white text-black px-4 py-3 text-sm font-medium hover:bg-white/90 transition"
+                className="flex-1 rounded-2xl bg-gradient-primary text-white px-4 py-3 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple"
               >
                 Continue
               </button>
@@ -243,7 +218,7 @@ export default function ProfileSetup() {
 
         {/* Step 3: Gear & Specialties */}
         {step === 3 && (
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <div className="rounded-3xl border-2 border-purple-500/50 bg-gradient-to-br from-purple-500/35 via-pink-500/30 to-emerald-500/30 backdrop-blur-md p-8 glow-purple">
             <h2 className="text-2xl font-semibold mb-4">Your gear & style</h2>
             <p className="text-white/70 mb-6">Select all that apply (you can add more later!)</p>
 
@@ -256,10 +231,10 @@ export default function ProfileSetup() {
                       key={gear}
                       type="button"
                       onClick={() => handleArrayToggle('gear', gear)}
-                      className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                      className={`rounded-xl border-2 px-3 py-2 text-xs font-medium transition backdrop-blur-sm ${
                         profileData.gear.includes(gear)
-                          ? 'border-emerald-400/50 bg-emerald-400/10 text-emerald-400'
-                          : 'border-white/15 bg-white/5 hover:bg-white/10'
+                          ? 'border-purple-300 bg-purple-400/40 text-white shadow-lg glow-purple'
+                          : 'border-purple-300/60 bg-white/15 hover:bg-white/25 hover:border-purple-300/80'
                       }`}
                     >
                       {gear}
@@ -275,7 +250,7 @@ export default function ProfileSetup() {
                       value={customGear}
                       onChange={(e) => setCustomGear(e.target.value)}
                       placeholder="Add custom gear (e.g., Leica M10)"
-                      className="flex-1 rounded-xl bg-white/5 border border-white/15 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-white/20"
+                      className="flex-1 rounded-xl bg-white/15 border-2 border-purple-300/70 px-3 py-2 text-xs outline-none placeholder-white/60 focus:ring-2 focus:ring-purple-300/80 focus:border-purple-300/90 backdrop-blur-sm"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
@@ -328,10 +303,10 @@ export default function ProfileSetup() {
                       key={specialty}
                       type="button"
                       onClick={() => handleArrayToggle('specialties', specialty)}
-                      className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                      className={`rounded-xl border-2 px-3 py-2 text-xs font-medium transition backdrop-blur-sm ${
                         profileData.specialties.includes(specialty)
-                          ? 'border-emerald-400/50 bg-emerald-400/10 text-emerald-400'
-                          : 'border-white/15 bg-white/5 hover:bg-white/10'
+                          ? 'border-purple-300 bg-purple-400/40 text-white shadow-lg glow-purple'
+                          : 'border-purple-300/60 bg-white/15 hover:bg-white/25 hover:border-purple-300/80'
                       }`}
                     >
                       {specialty}
@@ -345,14 +320,14 @@ export default function ProfileSetup() {
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="flex-1 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium hover:bg-white/10 transition"
+                className="flex-1 rounded-2xl border-2 border-purple-300/90 bg-purple-400/50 px-4 py-3 text-sm font-medium hover:bg-purple-400/60 hover:border-purple-300 transition-all glow-purple text-white"
               >
                 Back
               </button>
               <button
                 type="button"
                 onClick={nextStep}
-                className="flex-1 rounded-2xl bg-white text-black px-4 py-3 text-sm font-medium hover:bg-white/90 transition"
+                className="flex-1 rounded-2xl bg-gradient-primary text-white px-4 py-3 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple"
               >
                 Continue
               </button>
@@ -362,7 +337,7 @@ export default function ProfileSetup() {
 
         {/* Step 4: Portfolio Images */}
         {step === 4 && (
-          <form onSubmit={handleSubmit} className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <form onSubmit={handleSubmit} className="rounded-3xl border-2 border-purple-500/50 bg-gradient-to-br from-purple-500/30 via-purple-600/30 to-purple-500/30 backdrop-blur-md p-8 glow-purple">
             <h2 className="text-2xl font-semibold mb-4">Upload your work</h2>
             <p className="text-white/70 mb-6">Add up to 6 images that showcase your style</p>
 
@@ -414,14 +389,14 @@ export default function ProfileSetup() {
               <button
                 type="button"
                 onClick={() => setStep(3)}
-                className="flex-1 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium hover:bg-white/10 transition"
+                className="flex-1 rounded-2xl border-2 border-purple-300/90 bg-purple-400/50 px-4 py-3 text-sm font-medium hover:bg-purple-400/60 hover:border-purple-300 transition-all glow-purple text-white"
               >
                 Back
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 rounded-2xl bg-white text-black px-4 py-3 text-sm font-medium hover:bg-white/90 transition disabled:opacity-50"
+                className="flex-1 rounded-2xl bg-gradient-primary text-white px-4 py-3 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple disabled:opacity-50"
               >
                 {loading ? 'Saving...' : 'Complete Profile'}
               </button>
@@ -431,13 +406,14 @@ export default function ProfileSetup() {
               <button
                 type="submit"
                 disabled={loading}
-                className="text-sm text-white/60 hover:text-white"
+                className="text-sm text-white/80 hover:text-gradient-primary transition font-medium"
               >
                 Skip for now →
               </button>
             </div>
           </form>
         )}
+      </div>
       </div>
     </div>
   );

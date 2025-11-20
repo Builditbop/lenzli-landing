@@ -4,7 +4,6 @@ import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { uploadMultipleImages } from '../utils/cloudinary';
-import posthog from '../config/posthog';
 
 export default function EditProfile() {
   const { currentUser } = useAuth();
@@ -115,22 +114,9 @@ export default function EditProfile() {
         ...prev,
         portfolioImages: [...(prev.portfolioImages || []), ...result.urls].slice(0, 6)
       }));
-      
-      // Track image upload event
-      posthog.capture('image_uploaded', {
-        image_count: result.urls.length,
-        total_images: (profileData.portfolioImages?.length || 0) + result.urls.length,
-        rejected_count: result.rejected || 0,
-        context: 'edit_profile'
-      });
     } catch (err) {
       setError('Failed to upload images');
       console.error(err);
-      // Track upload error
-      posthog.capture('image_upload_failed', {
-        context: 'edit_profile',
-        error: err.message
-      });
     } finally {
       setUploadingImages(false);
     }
@@ -148,6 +134,12 @@ export default function EditProfile() {
     setLoading(true);
     setError('');
 
+    if (!profileData.role) {
+      setError('Please select a primary role');
+      setLoading(false);
+      return;
+    }
+
     try {
       const userRef = doc(db, 'users', currentUser.uid);
       await updateDoc(userRef, {
@@ -156,67 +148,57 @@ export default function EditProfile() {
         updatedAt: new Date().toISOString()
       });
 
-      // Track profile update event
-      posthog.capture('profile_updated', {
-        role: profileData.role,
-        gear_count: profileData.gear?.length || 0,
-        specialties_count: profileData.specialties?.length || 0,
-        photography_styles_count: profileData.photographyStyles?.length || 0,
-        portfolio_images_count: profileData.portfolioImages?.length || 0,
-        skill_level: profileData.skillLevel,
-        looking_for_count: profileData.lookingFor?.length || 0,
-        has_bio: !!profileData.bio,
-        has_location: !!profileData.location,
-        has_instagram: !!profileData.instagram,
-        has_website: !!profileData.website,
-        years_experience: profileData.yearsExperience
-      });
-
       navigate('/profile');
     } catch (err) {
       setError('Failed to save profile');
       console.error(err);
-      // Track profile update error
-      posthog.capture('profile_update_failed', {
-        error: err.message
-      });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-black text-white px-6 py-12">
+      <div className="min-h-screen bg-gradient-vibrant text-white relative overflow-hidden">
+        {/* Animated background blobs */}
+        <div className="absolute inset-0 bg-gradient-mesh opacity-40" />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-blob" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }} />
+      <div className="relative z-10 px-6 py-12">
       <div className="max-w-3xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Edit Profile</h1>
-          <p className="text-white/70">Keep your creator profile up to date</p>
+          <h1 className="text-3xl font-bold mb-2 text-gradient-primary">Edit Profile</h1>
+          <p className="text-white/80 font-medium">Keep your creator profile up to date</p>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          <div className="mb-4 p-3 rounded-2xl border-2 border-rose-400/50 bg-rose-500/20 text-rose-200 text-sm backdrop-blur-sm glow-pink">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Info */}
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8 space-y-6">
+          <div className="rounded-3xl border-2 border-purple-300/80 bg-white/15 backdrop-blur-md p-8 space-y-6 glow-purple">
             <h2 className="text-xl font-semibold">Basic Information</h2>
             
             <div>
               <label className="block text-sm text-white/70 mb-2">Primary Role *</label>
-              <select
-                value={profileData.role}
-                onChange={(e) => setProfileData({ ...profileData, role: e.target.value })}
-                className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-white/20"
-                required
-              >
-                <option value="">Select a role</option>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 {roles.map((role) => (
-                  <option key={role} value={role}>{role}</option>
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => setProfileData({ ...profileData, role })}
+                    className={`rounded-2xl border-2 px-4 py-3 text-sm font-medium transition backdrop-blur-sm ${
+                      profileData.role === role
+                        ? 'border-purple-300 bg-purple-400/40 text-white shadow-lg glow-purple'
+                        : 'border-purple-300/60 bg-white/15 hover:bg-white/25 hover:border-purple-300/80'
+                    }`}
+                  >
+                    {role}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
 
             <div>
@@ -238,7 +220,7 @@ export default function EditProfile() {
                   type="text"
                   value={profileData.location}
                   onChange={(e) => setProfileData({ ...profileData, location: e.target.value })}
-                  className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-white/20"
+                  className="w-full rounded-2xl bg-white/15 border-2 border-purple-300/70 px-4 py-3 text-sm outline-none placeholder-white/60 focus:ring-2 focus:ring-purple-300/80 focus:border-purple-300/90 backdrop-blur-sm"
                   placeholder="City, State"
                   required
                 />
@@ -250,7 +232,7 @@ export default function EditProfile() {
                   type="number"
                   value={profileData.yearsExperience}
                   onChange={(e) => setProfileData({ ...profileData, yearsExperience: e.target.value })}
-                  className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-white/20"
+                  className="w-full rounded-2xl bg-white/15 border-2 border-purple-300/70 px-4 py-3 text-sm outline-none placeholder-white/60 focus:ring-2 focus:ring-purple-300/80 focus:border-purple-300/90 backdrop-blur-sm"
                   placeholder="0"
                   min="0"
                   max="50"
@@ -265,7 +247,7 @@ export default function EditProfile() {
                   type="text"
                   value={profileData.instagram}
                   onChange={(e) => setProfileData({ ...profileData, instagram: e.target.value })}
-                  className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-white/20"
+                  className="w-full rounded-2xl bg-white/15 border-2 border-purple-300/70 px-4 py-3 text-sm outline-none placeholder-white/60 focus:ring-2 focus:ring-purple-300/80 focus:border-purple-300/90 backdrop-blur-sm"
                   placeholder="@username"
                 />
               </div>
@@ -276,7 +258,7 @@ export default function EditProfile() {
                   type="url"
                   value={profileData.website}
                   onChange={(e) => setProfileData({ ...profileData, website: e.target.value })}
-                  className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-white/20"
+                  className="w-full rounded-2xl bg-white/15 border-2 border-purple-300/70 px-4 py-3 text-sm outline-none placeholder-white/60 focus:ring-2 focus:ring-purple-300/80 focus:border-purple-300/90 backdrop-blur-sm"
                   placeholder="https://yoursite.com"
                 />
               </div>
@@ -284,7 +266,7 @@ export default function EditProfile() {
           </div>
 
           {/* Skill Level */}
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <div className="rounded-3xl border-2 border-purple-300/80 bg-white/15 backdrop-blur-md p-8 glow-purple">
             <h2 className="text-xl font-semibold mb-4">Skill Level</h2>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
               {skillLevelOptions.map((level) => (
@@ -292,10 +274,10 @@ export default function EditProfile() {
                   key={level}
                   type="button"
                   onClick={() => setProfileData({ ...profileData, skillLevel: level })}
-                  className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                  className={`rounded-2xl border-2 px-4 py-3 text-sm font-medium transition ${
                     profileData.skillLevel === level
-                      ? 'border-white bg-white text-black'
-                      : 'border-white/15 bg-white/5 hover:bg-white/10'
+                      ? 'border-purple-300 bg-purple-400/40 text-white shadow-lg glow-purple'
+                      : 'border-purple-300/60 bg-white/15 hover:bg-white/25 hover:border-purple-300/80 backdrop-blur-sm'
                   }`}
                 >
                   {level}
@@ -305,7 +287,7 @@ export default function EditProfile() {
           </div>
 
           {/* Camera Gear */}
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <div className="rounded-3xl border-2 border-purple-300/80 bg-white/15 backdrop-blur-md p-8 glow-purple">
             <h2 className="text-xl font-semibold mb-4">Camera Gear</h2>
             <p className="text-sm text-white/60 mb-4">Select all that you own or work with (60+ options + custom)</p>
             
@@ -340,10 +322,10 @@ export default function EditProfile() {
                   key={gear}
                   type="button"
                   onClick={() => handleArrayToggle('gear', gear)}
-                  className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                  className={`rounded-xl border-2 px-3 py-2 text-xs font-medium transition backdrop-blur-sm ${
                     profileData.gear?.includes(gear)
-                      ? 'border-emerald-400/50 bg-emerald-400/10 text-emerald-400'
-                      : 'border-white/15 bg-white/5 hover:bg-white/10'
+                      ? 'border-purple-300 bg-purple-400/40 text-white shadow-lg glow-purple'
+                      : 'border-purple-300/60 bg-white/15 hover:bg-white/25 hover:border-purple-300/80'
                   }`}
                 >
                   {gear}
@@ -396,7 +378,7 @@ export default function EditProfile() {
           </div>
 
           {/* Specialties */}
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <div className="rounded-3xl border-2 border-purple-300/80 bg-white/15 backdrop-blur-md p-8 glow-purple">
             <h2 className="text-xl font-semibold mb-4">Specialties</h2>
             <p className="text-sm text-white/60 mb-4">What types of work do you do?</p>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -405,10 +387,10 @@ export default function EditProfile() {
                   key={specialty}
                   type="button"
                   onClick={() => handleArrayToggle('specialties', specialty)}
-                  className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                  className={`rounded-xl border-2 px-3 py-2 text-xs font-medium transition backdrop-blur-sm ${
                     profileData.specialties?.includes(specialty)
-                      ? 'border-emerald-400/50 bg-emerald-400/10 text-emerald-400'
-                      : 'border-white/15 bg-white/5 hover:bg-white/10'
+                      ? 'border-purple-300 bg-purple-400/40 text-white shadow-lg glow-purple'
+                      : 'border-purple-300/60 bg-white/15 hover:bg-white/25 hover:border-purple-300/80'
                   }`}
                 >
                   {specialty}
@@ -418,7 +400,7 @@ export default function EditProfile() {
           </div>
 
           {/* Photography Styles */}
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <div className="rounded-3xl border-2 border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-cyan-500/20 backdrop-blur-md p-8 glow-purple">
             <h2 className="text-xl font-semibold mb-4">Photography Styles</h2>
             <p className="text-sm text-white/60 mb-4">What styles do you prefer or specialize in?</p>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -427,10 +409,10 @@ export default function EditProfile() {
                   key={style}
                   type="button"
                   onClick={() => handleArrayToggle('photographyStyles', style)}
-                  className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                  className={`rounded-xl border-2 px-3 py-2 text-xs font-medium transition backdrop-blur-sm ${
                     profileData.photographyStyles?.includes(style)
-                      ? 'border-purple-400/50 bg-purple-400/10 text-purple-400'
-                      : 'border-white/15 bg-white/5 hover:bg-white/10'
+                      ? 'border-purple-400 bg-purple-400/20 text-purple-300 shadow-lg glow-purple'
+                      : 'border-purple-400/30 bg-white/10 hover:bg-white/20'
                   }`}
                 >
                   {style}
@@ -440,7 +422,7 @@ export default function EditProfile() {
           </div>
 
           {/* Looking For */}
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <div className="rounded-3xl border-2 border-purple-300/80 bg-white/15 backdrop-blur-md p-8 glow-purple">
             <h2 className="text-xl font-semibold mb-4">What Are You Looking For?</h2>
             <p className="text-sm text-white/60 mb-4">Select all that apply</p>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -449,10 +431,10 @@ export default function EditProfile() {
                   key={option}
                   type="button"
                   onClick={() => handleArrayToggle('lookingFor', option)}
-                  className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
+                  className={`rounded-xl border-2 px-3 py-2 text-xs font-medium transition backdrop-blur-sm ${
                     profileData.lookingFor?.includes(option)
-                      ? 'border-blue-400/50 bg-blue-400/10 text-blue-400'
-                      : 'border-white/15 bg-white/5 hover:bg-white/10'
+                      ? 'border-purple-300 bg-purple-400/40 text-white shadow-lg glow-purple'
+                      : 'border-purple-300/60 bg-white/15 hover:bg-white/25 hover:border-purple-300/80'
                   }`}
                 >
                   {option}
@@ -462,7 +444,7 @@ export default function EditProfile() {
           </div>
 
           {/* Availability Toggle */}
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <div className="rounded-3xl border-2 border-emerald-400/30 bg-gradient-to-br from-emerald-500/20 via-purple-500/20 to-pink-500/20 backdrop-blur-md p-8 glow-emerald">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold">Availability</h2>
@@ -485,7 +467,7 @@ export default function EditProfile() {
           </div>
 
           {/* Portfolio Images */}
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+          <div className="rounded-3xl border-2 border-purple-400/30 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-cyan-500/20 backdrop-blur-md p-8 glow-purple">
             <h2 className="text-xl font-semibold mb-4">Portfolio (up to 6 images)</h2>
             
             {profileData.portfolioImages && profileData.portfolioImages.length > 0 && (
@@ -535,19 +517,20 @@ export default function EditProfile() {
             <button
               type="button"
               onClick={() => navigate('/profile')}
-              className="flex-1 rounded-2xl border border-white/15 bg-white/5 px-6 py-3 text-sm font-medium hover:bg-white/10 transition"
+              className="flex-1 rounded-2xl border-2 border-purple-300/90 bg-purple-400/50 px-6 py-3 text-sm font-medium hover:bg-purple-400/60 hover:border-purple-300 transition-all glow-purple text-white"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading || uploadingImages}
-              className="flex-1 rounded-2xl bg-white text-black px-6 py-3 text-sm font-medium hover:bg-white/90 transition disabled:opacity-50"
+              className="flex-1 rounded-2xl bg-gradient-primary text-white px-6 py-3 text-sm font-semibold hover:opacity-90 transition-all shadow-lg glow-purple disabled:opacity-50"
             >
               {loading ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </form>
+      </div>
       </div>
     </div>
   );
