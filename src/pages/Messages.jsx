@@ -23,6 +23,8 @@ export default function Messages() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [blocking, setBlocking] = useState(false);
+  const [canMessage, setCanMessage] = useState(true);
+  const [messagePrivacyError, setMessagePrivacyError] = useState('');
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -35,8 +37,63 @@ export default function Messages() {
   useEffect(() => {
     if (selectedChat && currentUser?.uid) {
       checkIfBlocked();
+      checkMessagePrivacy();
     }
   }, [selectedChat, currentUser]);
+
+  const checkMessagePrivacy = async () => {
+    if (!selectedChat || !currentUser?.uid) return;
+    
+    try {
+      const recipientRef = doc(db, 'users', selectedChat.creatorId);
+      const recipientSnap = await getDoc(recipientRef);
+      
+      if (recipientSnap.exists()) {
+        const recipientData = recipientSnap.data();
+        const messagePrivacy = recipientData.messagePrivacy || 'everyone';
+        
+        if (messagePrivacy === 'none') {
+          setCanMessage(false);
+          setMessagePrivacyError('This user has disabled messaging');
+          return;
+        }
+        
+        if (messagePrivacy === 'connections') {
+          // Check if current user is a connection
+          const connectionsRef = collection(db, 'connections');
+          const connectionQuery = query(
+            connectionsRef,
+            where('userId', '==', selectedChat.creatorId),
+            where('creatorId', '==', currentUser.uid)
+          );
+          const connectionSnap = await getDocs(connectionQuery);
+          
+          if (connectionSnap.empty) {
+            // Also check reverse connection
+            const reverseQuery = query(
+              connectionsRef,
+              where('userId', '==', currentUser.uid),
+              where('creatorId', '==', selectedChat.creatorId)
+            );
+            const reverseSnap = await getDocs(reverseQuery);
+            
+            if (reverseSnap.empty) {
+              setCanMessage(false);
+              setMessagePrivacyError('This user only accepts messages from connections');
+              return;
+            }
+          }
+        }
+        
+        setCanMessage(true);
+        setMessagePrivacyError('');
+      }
+    } catch (error) {
+      console.error('Error checking message privacy:', error);
+      // Default to allowing messages if check fails
+      setCanMessage(true);
+    }
+  };
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -318,6 +375,11 @@ export default function Messages() {
   const sendMessage = async (e) => {
     e.preventDefault();
     if ((!newMessage.trim() && !imagePreview) || !selectedChat) return;
+    
+    if (!canMessage) {
+      setError(messagePrivacyError || 'You cannot send messages to this user');
+      return;
+    }
 
     setUploadingImage(true);
     setError('');
@@ -454,6 +516,7 @@ export default function Messages() {
             <Link to="/connections" className="hover:text-gradient-primary transition font-medium">Connections</Link>
             <Link to="/messages" className="hover:text-gradient-primary transition font-medium text-gradient-primary">Messages</Link>
             <Link to="/profile" className="hover:text-gradient-primary transition font-medium">Profile</Link>
+            <Link to="/settings" className="hover:text-gradient-primary transition font-medium">Settings</Link>
           </div>
         </nav>
       </header>
@@ -701,6 +764,15 @@ export default function Messages() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                   </svg>
                   <span>This user is blocked. You cannot send messages.</span>
+                </div>
+              </div>
+            ) : !canMessage ? (
+              <div className="p-4 border-t-2 border-purple-400/30 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-sm">
+                <div className="p-4 bg-rose-400/10 border border-rose-400/30 rounded-xl text-sm text-rose-300 flex items-center gap-2">
+                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  <span>{messagePrivacyError || 'You cannot send messages to this user'}</span>
                 </div>
               </div>
             ) : (

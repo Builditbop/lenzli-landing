@@ -1,23 +1,148 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, setDoc, getDoc, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, getDoc, updateDoc, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { useSpring, animated } from '@react-spring/web';
 import { filterBlockedUsers } from '../utils/safety';
+import { searchUsers, applyFilters, hasActiveFilters, countActiveFilters, clearFilters } from '../utils/search';
+import FilterModal from '../components/FilterModal';
 
 export default function Discover() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  const [allCreators, setAllCreators] = useState([]);
   const [creators, setCreators] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showMatch, setShowMatch] = useState(false);
   const [matchedUser, setMatchedUser] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState({
+    roles: [],
+    gear: [],
+    specialties: [],
+    skillLevel: [],
+    availability: null
+  });
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [savedSearches, setSavedSearches] = useState([]);
+  const [showSavedSearches, setShowSavedSearches] = useState(false);
 
   useEffect(() => {
     fetchCreators();
+    fetchSavedSearches();
   }, [currentUser]);
+
+  useEffect(() => {
+    applySearchAndFilters();
+  }, [allCreators, searchQuery, filters]);
+
+  // Close saved searches dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showSavedSearches && !event.target.closest('.relative')) {
+        setShowSavedSearches(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSavedSearches]);
+
+  const fetchSavedSearches = async () => {
+    if (!currentUser?.uid) return;
+    
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      const userSnap = await getDoc(userRef);
+      
+      if (userSnap.exists()) {
+        const savedSearchesData = userSnap.data().savedSearches || [];
+        setSavedSearches(savedSearchesData);
+      }
+    } catch (error) {
+      console.error('Error fetching saved searches:', error);
+    }
+  };
+
+  const applySearchAndFilters = () => {
+    let filtered = [...allCreators];
+    
+    // Apply search
+    if (searchQuery.trim()) {
+      filtered = searchUsers(filtered, searchQuery);
+    }
+    
+    // Apply filters
+    if (hasActiveFilters(filters)) {
+      filtered = applyFilters(filtered, filters);
+    }
+    
+    setCreators(filtered);
+    setCurrentIndex(0); // Reset to first card when filters change
+  };
+
+  const handleSaveSearch = async () => {
+    if (!hasActiveFilters(filters) && !searchQuery.trim()) {
+      alert('Please add filters or a search query before saving');
+      return;
+    }
+
+    if (!currentUser?.uid) return;
+
+    try {
+      const searchName = prompt('Enter a name for this search:');
+      if (!searchName) return;
+
+      const newSearch = {
+        id: Date.now().toString(),
+        name: searchName,
+        searchQuery: searchQuery.trim(),
+        filters: { ...filters },
+        createdAt: new Date().toISOString()
+      };
+
+      const userRef = doc(db, 'users', currentUser.uid);
+      const userSnap = await getDoc(userRef);
+      const currentSearches = userSnap.exists() ? (userSnap.data().savedSearches || []) : [];
+      
+      await updateDoc(userRef, {
+        savedSearches: [...currentSearches, newSearch],
+        updatedAt: new Date().toISOString()
+      });
+
+      setSavedSearches([...currentSearches, newSearch]);
+      alert('Search saved successfully!');
+    } catch (error) {
+      console.error('Error saving search:', error);
+      alert('Failed to save search');
+    }
+  };
+
+  const handleLoadSavedSearch = (savedSearch) => {
+    setSearchQuery(savedSearch.searchQuery || '');
+    setFilters(savedSearch.filters || clearFilters());
+    setShowSavedSearches(false);
+  };
+
+  const handleDeleteSavedSearch = async (searchId) => {
+    if (!currentUser?.uid) return;
+
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      const updatedSearches = savedSearches.filter(s => s.id !== searchId);
+      
+      await updateDoc(userRef, {
+        savedSearches: updatedSearches,
+        updatedAt: new Date().toISOString()
+      });
+
+      setSavedSearches(updatedSearches);
+    } catch (error) {
+      console.error('Error deleting saved search:', error);
+      alert('Failed to delete search');
+    }
+  };
 
   const fetchCreators = async () => {
     try {
@@ -33,12 +158,17 @@ export default function Discover() {
       
       querySnapshot.forEach((doc) => {
         if (doc.id !== currentUser.uid) {
-          creatorsData.push({ id: doc.id, ...doc.data() });
+          const userData = doc.data();
+          // Filter out users who have hidden their profile from discovery
+          if (!userData.hideFromDiscovery) {
+            creatorsData.push({ id: doc.id, ...userData });
+          }
         }
       });
       
       // Filter out blocked users
       const filteredCreators = await filterBlockedUsers(currentUser.uid, creatorsData);
+      setAllCreators(filteredCreators);
       setCreators(filteredCreators);
     } catch (error) {
       console.error('Error fetching creators:', error);
@@ -150,6 +280,7 @@ export default function Discover() {
             <Link to="/connections" className="hover:text-gradient-primary transition font-medium">Connections</Link>
             <Link to="/messages" className="hover:text-gradient-primary transition font-medium">Messages</Link>
             <Link to="/profile" className="hover:text-gradient-primary transition font-medium">Profile</Link>
+            <Link to="/settings" className="hover:text-gradient-primary transition font-medium">Settings</Link>
           </div>
         </nav>
       </header>
@@ -190,12 +321,135 @@ export default function Discover() {
 
       {/* Main Content */}
       <div className="mx-auto max-w-md px-6 py-8">
+        {/* Search and Filter Bar */}
+        <div className="mb-6 space-y-3">
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by name, role, location, gear..."
+                className="w-full rounded-2xl bg-white/5 border border-white/15 px-4 py-3 pl-10 text-sm outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400/30 transition-all text-white placeholder-white/40"
+              />
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <button
+              onClick={() => setShowFilterModal(true)}
+              className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+                hasActiveFilters(filters)
+                  ? 'border-emerald-400 bg-emerald-400/20 text-emerald-300'
+                  : 'border-white/20 bg-white/5 text-white hover:bg-white/10'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                {hasActiveFilters(filters) && (
+                  <span className="bg-emerald-400 text-black rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                    {countActiveFilters(filters)}
+                  </span>
+                )}
+              </div>
+            </button>
+            {savedSearches.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowSavedSearches(!showSavedSearches)}
+                  className="rounded-2xl border border-white/20 bg-white/5 px-4 py-3 text-sm font-medium hover:bg-white/10 transition"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
+                </button>
+                {showSavedSearches && (
+                  <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl border border-white/10 bg-gradient-to-br from-gray-900 to-black shadow-2xl overflow-hidden z-50">
+                    <div className="p-3 border-b border-white/10 bg-white/5">
+                      <div className="text-xs font-semibold text-white/60">Saved Searches</div>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto">
+                      {savedSearches.map((search) => (
+                        <div key={search.id} className="p-3 border-b border-white/5 hover:bg-white/5 transition">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate">{search.name}</div>
+                              {(search.searchQuery || hasActiveFilters(search.filters)) && (
+                                <div className="text-xs text-white/50 mt-1">
+                                  {search.searchQuery && `"${search.searchQuery}"`}
+                                  {search.searchQuery && hasActiveFilters(search.filters) && ' • '}
+                                  {hasActiveFilters(search.filters) && `${countActiveFilters(search.filters)} filters`}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => handleLoadSavedSearch(search)}
+                                className="p-1 rounded hover:bg-white/10 transition"
+                                title="Load search"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSavedSearch(search.id)}
+                                className="p-1 rounded hover:bg-red-500/20 transition text-red-400"
+                                title="Delete search"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          {(hasActiveFilters(filters) || searchQuery.trim()) && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setFilters(clearFilters());
+                }}
+                className="text-xs text-white/60 hover:text-white transition flex items-center gap-1"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Clear all
+              </button>
+              {hasActiveFilters(filters) && (
+                <button
+                  onClick={handleSaveSearch}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 transition flex items-center gap-1 ml-auto"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
+                  Save search
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
         {currentIndex < creators.length ? (
           <div>
             <div className="mb-6 text-center">
               <h2 className="text-2xl font-semibold mb-2">Discover Creators</h2>
               <p className="text-white/60 text-sm">
                 {creators.length - currentIndex} {creators.length - currentIndex === 1 ? 'creator' : 'creators'} remaining
+                {creators.length !== allCreators.length && ` (${creators.length} of ${allCreators.length} shown)`}
               </p>
             </div>
 
@@ -355,6 +609,14 @@ export default function Discover() {
         )}
       </div>
       </div>
+
+      {/* Filter Modal */}
+      <FilterModal
+        isOpen={showFilterModal}
+        onClose={() => setShowFilterModal(false)}
+        filters={filters}
+        onFiltersChange={setFilters}
+      />
 
       <style>{`
         @keyframes fade-in {

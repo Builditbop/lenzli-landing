@@ -167,6 +167,7 @@ export default function Profile() {
             <Link to="/connections" className="hover:text-gradient-primary transition font-medium">Connections</Link>
             <Link to="/messages" className="hover:text-gradient-primary transition font-medium">Messages</Link>
             <Link to="/profile" className="hover:text-gradient-primary transition font-medium">Profile</Link>
+            <Link to="/settings" className="hover:text-gradient-primary transition font-medium">Settings</Link>
           </div>
         </nav>
       </header>
