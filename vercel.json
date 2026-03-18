@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "VITE_LANDING_ONLY=true npm run build",
   "outputDirectory": "dist",
   "devCommand": "npm run dev",
   "installCommand": "npm install",

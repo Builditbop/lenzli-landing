@@ -1,24 +1,49 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import React from 'react'
-import App from '../App.jsx'
+import { BrowserRouter } from 'react-router-dom'
+import LenzliLanding from '../pages/Landing.jsx'
+
+// Mock IntersectionObserver
+const mockIntersectionObserver = class {
+  constructor() {}
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+window.IntersectionObserver = mockIntersectionObserver
 
 describe('LenzliLanding', () => {
   it('renders hero heading', () => {
-    render(<App />)
+    render(
+      <BrowserRouter>
+        <LenzliLanding />
+      </BrowserRouter>
+    )
     expect(screen.getByText(/Connect\. Collaborate\. Create\./i)).toBeInTheDocument()
   })
 
   it('has a waitlist form', () => {
-    render(<App />)
+    render(
+      <BrowserRouter>
+        <LenzliLanding />
+      </BrowserRouter>
+    )
     expect(screen.getByPlaceholderText(/enter your email/i)).toBeInTheDocument()
   })
 
-  it('shows success message after submit', () => {
-    render(<App />)
+  it('shows saving state on submit', async () => {
+    render(
+      <BrowserRouter>
+        <LenzliLanding />
+      </BrowserRouter>
+    )
     const input = screen.getByPlaceholderText(/enter your email/i)
-    const button = screen.getByRole('button', { name: /join waitlist/i })
-    input.value = 'test@example.com'
-    button.click()
-    expect(screen.getByText(/You’re on the list!/i)).toBeInTheDocument()
+    const button = screen.getByRole('button', { name: /^join$/i })
+    
+    fireEvent.change(input, { target: { value: 'test@example.com' } })
+    fireEvent.click(button)
+    
+    expect(screen.getByRole('button', { name: /saving/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /saving/i })).toBeDisabled()
   })
 })

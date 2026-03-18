@@ -32,15 +32,29 @@ service cloud.firestore {
       allow read: if request.auth != null;  // Only authenticated users can read
     }
     
+    // Chats - metadata about conversations
+    match /chats/{chatId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid in resource.data.participants || 
+         request.auth.uid in chatId.split('_'));
+      allow create: if request.auth != null && 
+        request.auth.uid in request.resource.data.participants;
+      allow update: if request.auth != null && 
+        (request.auth.uid in resource.data.participants || 
+         request.auth.uid in chatId.split('_'));
+    }
+
     // Messages - chat participants can read, create, and update read status
     match /chats/{chatId}/messages/{messageId} {
       allow read: if request.auth != null && 
-        request.auth.uid in chatId.split('_');
+        (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+         request.auth.uid in chatId.split('_'));
       allow create: if request.auth != null && 
-        request.auth.uid in chatId.split('_');
-      // Allow update for read receipts (users can mark messages as read)
+        (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+         request.auth.uid in chatId.split('_'));
       allow update: if request.auth != null && 
-        request.auth.uid in chatId.split('_');
+        (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+         request.auth.uid in chatId.split('_'));
     }
     
     // Typing indicators - chat participants can read and write their own typing status

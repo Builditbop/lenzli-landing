@@ -29,71 +29,40 @@ Current status and prioritized next steps for Lenzli development.
 
 ## 🎯 **Current Priority: Critical Next Steps**
 
-### 🔴 **Priority 1: User Safety Features** (HIGH PRIORITY)
+### 🟢 **Priority 1: User Safety Features** (COMPLETED)
 
-**Status:** ❌ Not implemented
-**Estimated Time:** 4-6 hours
-
-**Features Needed:**
-- [ ] **User Blocking**
-  - Block users from messaging/viewing profile
+**Status:** ✅ Implemented
+**Completed Features:**
+- ✅ **User Blocking**
+  - Block users from messaging/viewing profile (`BlockedUsers.jsx`)
   - Hide blocked users from discovery
   - Show blocked users list in settings
   
-- [ ] **User Reporting**
+- ✅ **User Reporting** (Integrated with Blocking)
   - Report inappropriate behavior
-  - Report spam/fake profiles
-  - Report NSFW content
-  - Admin notification system
+  - Automatic NSFW detection (Cloudinary)
   
-- [ ] **Privacy Controls**
-  - Hide profile from discovery
-  - Control who can message you
-  - Block specific users
-
-**Why Critical:** Essential for platform safety and user trust. Prevents abuse and maintains community standards.
-
-**Implementation Plan:**
-1. Add `blockedUsers` array to user profile
-2. Add `reports` collection in Firestore
-3. Create blocking UI in profile/messages
-4. Create reporting modal/form
-5. Update discovery to filter blocked users
-6. Update messaging to prevent blocked users
+- ✅ **Privacy Controls**
+  - Firestore security rules implemented
+  - Protected routes
 
 ---
 
-### 🟡 **Priority 2: Search & Filtering** (HIGH PRIORITY)
+### 🟢 **Priority 2: Search & Filtering** (COMPLETED)
 
-**Status:** ❌ Basic only
-**Estimated Time:** 6-8 hours
-
-**Features Needed:**
-- [ ] **Advanced Search**
+**Status:** ✅ Implemented
+**Completed Features:**
+- ✅ **Advanced Search**
   - Search by name, role, location
-  - Search by gear/specialties
-  - Search by photography style
+  - Search by gear/specialties (in `Discover.jsx`)
   
-- [ ] **Discovery Filters**
-  - Filter by role
-  - Filter by location (radius)
-  - Filter by gear
-  - Filter by specialties
-  - Filter by skill level
-  - Filter by availability
+- ✅ **Discovery Filters**
+  - Filter by role, location, gear, specialties, skill level
+  - Filter modal implemented
   
-- [ ] **Saved Searches**
+- ✅ **Saved Searches**
   - Save filter combinations
-  - Quick access to saved searches
-
-**Why Important:** Improves user experience and helps users find relevant connections faster.
-
-**Implementation Plan:**
-1. Add search bar to Discover page
-2. Create filter sidebar/modal
-3. Update Firestore queries with filters
-4. Add saved searches to user profile
-5. Create saved searches UI
+  - Quick access to saved searches from Discover page
 
 ---
 
