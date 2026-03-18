@@ -1,42 +1,62 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, setDoc, getDoc, limit } from 'firebase/firestore';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import { collection, query, where, getDocs, doc, setDoc, getDoc, updateDoc, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { useSpring, animated } from '@react-spring/web';
+import { filterBlockedUsers } from '../utils/safety';
+import { applyFilters, hasActiveFilters, countActiveFilters, clearFilters } from '../utils/search';
+import FilterModal from '../components/FilterModal';
+import { SlidersHorizontal, MapPin, Camera, X, Heart, Star, Info, Search } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Discover() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  const [allCreators, setAllCreators] = useState([]);
   const [creators, setCreators] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showMatch, setShowMatch] = useState(false);
   const [matchedUser, setMatchedUser] = useState(null);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [filters, setFilters] = useState({
+    role: 'all',
+    location: '',
+    minExperience: 0,
+    specialties: []
+  });
+
+  // State to handle swipe animations
+  const [exitX, setExitX] = useState(0);
 
   useEffect(() => {
     fetchCreators();
   }, [currentUser]);
 
+  useEffect(() => {
+    let result = allCreators;
+    if (hasActiveFilters(filters)) {
+      result = applyFilters(result, filters);
+    }
+    setCreators(result);
+    setCurrentIndex(0);
+  }, [filters, allCreators]);
+
   const fetchCreators = async () => {
+    if (!currentUser?.uid) return;
     try {
-      const usersRef = collection(db, 'users');
-      const q = query(
-        usersRef,
-        where('profileComplete', '==', true),
-        limit(50)
-      );
-      
+      const q = query(collection(db, 'users'), limit(50));
       const querySnapshot = await getDocs(q);
       const creatorsData = [];
-      
       querySnapshot.forEach((doc) => {
         if (doc.id !== currentUser.uid) {
           creatorsData.push({ id: doc.id, ...doc.data() });
         }
       });
-      
-      setCreators(creatorsData);
+      const filteredCreators = await filterBlockedUsers(currentUser.uid, creatorsData);
+      setAllCreators(filteredCreators);
+      setCreators(filteredCreators);
     } catch (error) {
       console.error('Error fetching creators:', error);
     } finally {
@@ -44,297 +64,229 @@ export default function Discover() {
     }
   };
 
-  const [slideDirection, setSlideDirection] = useState(null);
-
-  const handleAction = async (action) => {
-    if (currentIndex >= creators.length) return;
-
-    const currentCreator = creators[currentIndex];
-    setSlideDirection(action);
-
-    // Save the connection if they clicked connect
-    if (action === 'connect') {
-      try {
-        const connectionRef = doc(db, 'connections', `${currentUser.uid}_${currentCreator.id}`);
-        await setDoc(connectionRef, {
-          userId: currentUser.uid,
-          creatorId: currentCreator.id,
-          status: 'pending',
-          createdAt: new Date().toISOString()
-        });
-
-        // Check if there's a mutual connection
-        const reverseConnectionRef = doc(db, 'connections', `${currentCreator.id}_${currentUser.uid}`);
-        const reverseConnection = await getDoc(reverseConnectionRef);
-        
-        if (reverseConnection.exists()) {
-          // It's a match!
-          setMatchedUser(currentCreator);
-          setShowMatch(true);
-          setTimeout(() => setShowMatch(false), 3000);
-        }
-      } catch (error) {
-        console.error('Error saving connection:', error);
-      }
-    }
-
-    // Move to next card with animation
+  const handlePass = () => {
+    setExitX(-200);
     setTimeout(() => {
-      setCurrentIndex(currentIndex + 1);
-      setSlideDirection(null);
-    }, 400);
+      setCurrentIndex(prev => prev + 1);
+      setExitX(0);
+    }, 200);
   };
+
+  const handleConnect = () => {
+    setExitX(200);
+    setTimeout(() => {
+      // In a real app, logic for connecting/liking goes here
+      setCurrentIndex(prev => prev + 1);
+      setExitX(0);
+    }, 200);
+  };
+
+  // Keyboard controls
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (creators.length === 0 || currentIndex >= creators.length) return;
+      
+      // Ignore if user is typing in an input
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+      if (e.key.toLowerCase() === 'a') {
+        handlePass();
+      } else if (e.key.toLowerCase() === 'd') {
+        handleConnect();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentIndex, creators.length]);
 
   const currentCreator = creators[currentIndex];
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-white">Loading creators...</div>
+      <div className="min-h-screen bg-[var(--bg-color)] text-[var(--text-primary)]">
+        <div className="flex items-center justify-center min-h-[calc(100vh-64px)] px-6 py-12">
+          <div className="w-full max-w-md mx-auto">
+            <div className="aspect-[3/4] rounded-2xl border border-[var(--border-color)] bg-[var(--text-primary)]/5 relative overflow-hidden">
+              <div className="absolute inset-0 flex flex-col justify-end p-6">
+                <div className="space-y-3">
+                  <div className="h-8 w-48 bg-[var(--text-primary)]/10 rounded animate-pulse" />
+                  <div className="h-4 w-32 bg-[var(--text-primary)]/10 rounded animate-pulse" />
+                  <div className="flex gap-2">
+                    <div className="h-6 w-16 bg-[var(--text-primary)]/10 rounded-full animate-pulse" />
+                    <div className="h-6 w-16 bg-[var(--text-primary)]/10 rounded-full animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      {/* Header */}
-      <header className="border-b border-white/10 bg-black/60 backdrop-blur sticky top-0 z-50">
-        <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold">Lenzli</h1>
-          </div>
-          <div className="flex items-center gap-4 text-sm">
-            <Link to="/discover" className="hover:text-white/80 transition">
-              Discover
-            </Link>
-            <Link to="/connections" className="hover:text-white/80 transition">
-              Connections
-            </Link>
-            <Link to="/messages" className="hover:text-white/80 transition">
-              Messages
-            </Link>
-            <Link to="/profile" className="hover:text-white/80 transition">
-              Profile
-            </Link>
-          </div>
-        </nav>
-      </header>
-
+    <div className="min-h-screen bg-[var(--bg-color)] text-[var(--text-primary)] transition-colors duration-300 overflow-hidden">
       {/* Match Notification */}
       {showMatch && matchedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="rounded-3xl border border-emerald-400/30 bg-gradient-to-br from-emerald-400/20 to-emerald-600/20 p-12 text-center max-w-md mx-6 animate-scale-in">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-emerald-400/30 flex items-center justify-center">
-              <svg className="w-12 h-12 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-12 text-center max-w-md mx-6 shadow-elevated animate-slide-up text-[var(--text-primary)]">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-[var(--accent-color)] flex items-center justify-center">
+              <Heart className="w-10 h-10 text-[var(--accent-text)] fill-current" />
             </div>
-            <h2 className="text-3xl font-bold mb-2">It's a Match!</h2>
-            <p className="text-white/80 mb-6">
-              You and <span className="font-semibold text-emerald-300">{matchedUser.displayName}</span> can now collaborate
+            <h2 className="text-3xl font-bold mb-2">It's a Connection!</h2>
+            <p className="text-[var(--text-secondary)] mb-8">
+              You and {matchedUser.displayName} have connected.
             </p>
             <div className="flex gap-3">
-              <Link
-                to="/messages"
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-400 text-black px-6 py-3 text-sm font-medium hover:bg-emerald-500 transition"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                Send Message
-              </Link>
               <button
                 onClick={() => setShowMatch(false)}
-                className="rounded-2xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-medium hover:bg-white/10 transition"
+                className="flex-1 px-6 py-3 rounded-xl border border-[var(--border-color)] font-semibold hover:bg-[var(--text-primary)]/5 transition-all"
               >
-                Continue
+                Keep Exploring
+              </button>
+              <button
+                onClick={() => navigate(`/messages?userId=${matchedUser.id}`)}
+                className="flex-1 px-6 py-3 rounded-xl bg-[var(--accent-color)] text-[var(--accent-text)] font-semibold hover:opacity-90 transition-all shadow-subtle"
+              >
+                Send Message
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="mx-auto max-w-md px-6 py-8">
-        {currentIndex < creators.length ? (
-          <div>
-            <div className="mb-6 text-center">
-              <h2 className="text-2xl font-semibold mb-2">Discover Creators</h2>
-              <p className="text-white/60 text-sm">
-                {creators.length - currentIndex} {creators.length - currentIndex === 1 ? 'creator' : 'creators'} remaining
-              </p>
-            </div>
+      <div className="max-w-7xl mx-auto px-6 py-8 h-[calc(100vh-64px)] flex flex-col">
+        {/* Filters Header */}
+        <div className="flex justify-end mb-8 shrink-0">
+          <button
+            onClick={() => setShowFilterModal(true)}
+            className={`flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-[var(--card-bg)] ring-1 ring-[var(--border-color)] shadow-sm font-bold transition-all hover:bg-[var(--text-primary)]/5 ${
+              hasActiveFilters(filters) ? 'text-[var(--accent-color)] ring-[var(--accent-color)]' : 'text-[var(--text-secondary)]'
+            }`}
+          >
+            <SlidersHorizontal className="w-5 h-5" />
+            Filters
+            {hasActiveFilters(filters) && (
+              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[var(--accent-color)] text-[var(--accent-text)] text-[10px]">
+                {countActiveFilters(filters)}
+              </span>
+            )}
+          </button>
+        </div>
 
-            {/* Card Display */}
-            <div className="relative h-[600px]">
-              {/* Background cards for depth effect */}
-              {creators.slice(currentIndex + 1, currentIndex + 3).map((creator, idx) => (
-                <div
-                  key={creator.id}
-                  className="absolute inset-0 rounded-3xl border border-white/10 bg-white/5"
-                  style={{
-                    transform: `scale(${1 - (idx + 1) * 0.05}) translateY(${(idx + 1) * -10}px)`,
-                    zIndex: 10 - idx
-                  }}
-                />
-              ))}
+        {creators.length > 0 && currentIndex < creators.length ? (
+          <div className="flex flex-col items-center justify-center flex-1 relative">
+            
+            {/* Clickable Pass Button (Left) */}
+            <button 
+              onClick={handlePass}
+              className="absolute left-4 xl:left-[15%] top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 text-[var(--text-secondary)] hover:text-black transition-colors z-10 group"
+              aria-label="Pass (A)"
+            >
+              <div className="w-14 h-14 rounded-full border-2 border-current flex items-center justify-center font-black text-xl group-hover:scale-110 group-active:scale-95 transition-transform bg-[var(--bg-color)]/50 backdrop-blur-sm">A</div>
+              <span className="text-[10px] font-black uppercase tracking-widest">Pass</span>
+            </button>
 
-              {/* Main Card */}
-              <div
-                className={`absolute inset-0 rounded-3xl border border-white/20 bg-cover bg-center shadow-2xl transition-all duration-400 ${
-                  slideDirection === 'pass' ? '-translate-x-full opacity-0 -rotate-12' :
-                  slideDirection === 'connect' ? 'translate-x-full opacity-0 rotate-12' : ''
-                }`}
-                style={{
-                  backgroundImage: currentCreator?.portfolioImages?.[0]
-                    ? `url(${currentCreator.portfolioImages[0]})`
-                    : 'linear-gradient(to bottom, rgba(255,255,255,0.1), rgba(0,0,0,0.8))',
-                  zIndex: 20
-                }}
+            {/* Clickable Connect Button (Right) */}
+            <button 
+              onClick={handleConnect}
+              className="absolute right-4 xl:right-[15%] top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 text-[var(--accent-color)] hover:opacity-80 transition-opacity z-10 group"
+              aria-label="Connect (D)"
+            >
+              <div className="w-14 h-14 rounded-full border-2 border-current flex items-center justify-center font-black text-xl group-hover:scale-110 group-active:scale-95 transition-transform bg-[var(--bg-color)]/50 backdrop-blur-sm">D</div>
+              <span className="text-[10px] font-black uppercase tracking-widest">Connect</span>
+            </button>
+
+            {/* Creator Card */}
+            <AnimatePresence mode="wait">
+              <motion.div 
+                key={creators[currentIndex].id}
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ x: exitX, scale: 1, opacity: 1, rotate: exitX * 0.05 }}
+                exit={{ x: exitX, opacity: 0, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                className="w-full max-w-md relative group z-0"
               >
-                {/* Gradient overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/20 rounded-3xl" />
-
-                {/* Action indicators */}
-                <div className={`absolute left-8 top-8 px-6 py-3 rounded-2xl border-2 font-bold text-lg transition-opacity ${
-                  slideDirection === 'pass' 
-                    ? 'opacity-100 border-rose-400 bg-rose-400/20 text-rose-300' 
-                    : 'opacity-0 border-rose-400/30 text-rose-300/50'
-                }`}>
-                  PASS
-                </div>
-                
-                <div className={`absolute right-8 top-8 px-6 py-3 rounded-2xl border-2 font-bold text-lg transition-opacity ${
-                  slideDirection === 'connect' 
-                    ? 'opacity-100 border-emerald-400 bg-emerald-400/20 text-emerald-300' 
-                    : 'opacity-0 border-emerald-400/30 text-emerald-300/50'
-                }`}>
-                  CONNECT
-                </div>
-
-                {/* Creator Info */}
-                <div className="absolute bottom-0 left-0 right-0 p-6 space-y-3">
-                  <div>
-                    <h3 className="text-2xl font-bold">{currentCreator?.displayName || 'Creator'}</h3>
-                    <p className="text-white/80">{currentCreator?.role || 'Photographer'}</p>
-                  </div>
-
-                  {currentCreator?.bio && (
-                    <p className="text-sm text-white/70 line-clamp-2">{currentCreator.bio}</p>
-                  )}
-
-                  <div className="flex flex-wrap gap-2">
-                    {currentCreator?.location && (
-                      <span className="text-xs px-2 py-1 rounded-full bg-white/10 border border-white/10 backdrop-blur">
-                        {currentCreator.location}
-                      </span>
+                <div className="aspect-[3/4] rounded-[2.5rem] overflow-hidden bg-[var(--card-bg)] border border-[var(--border-color)] shadow-elevated relative">
+                  <div
+                    className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105"
+                    style={{
+                      backgroundImage: creators[currentIndex].portfolioImages?.[0]
+                        ? `url(${creators[currentIndex].portfolioImages[0]})`
+                        : 'linear-gradient(to bottom right, #e5e7eb, #f3f4f6)'
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  
+                  <div className="absolute inset-0 flex flex-col justify-end p-8 text-white">
+                    <h2 className="text-3xl font-black mb-1">{creators[currentIndex].displayName}</h2>
+                    <p className="text-white/80 font-bold flex items-center gap-2 mb-4 uppercase tracking-widest text-xs">
+                      <Camera className="w-3.5 h-3.5" />
+                      {creators[currentIndex].role}
+                    </p>
+                    
+                    {creators[currentIndex].location && (
+                      <p className="text-white/60 text-sm flex items-center gap-2 mb-6">
+                        <MapPin className="w-4 h-4" />
+                        {creators[currentIndex].location}
+                      </p>
                     )}
-                    {currentCreator?.gear?.slice(0, 2).map((gear) => (
-                      <span key={gear} className="text-xs px-2 py-1 rounded-full bg-white/10 border border-white/10 backdrop-blur">
-                        {gear}
-                      </span>
-                    ))}
-                  </div>
 
-                  {currentCreator?.specialties && currentCreator.specialties.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {currentCreator.specialties.slice(0, 3).map((specialty) => (
-                        <span key={specialty} className="text-xs px-2 py-1 rounded-full bg-emerald-400/10 border border-emerald-400/20 text-emerald-300 backdrop-blur">
-                          {specialty}
+                    <div className="flex flex-wrap gap-2 mb-8">
+                      {creators[currentIndex].specialties?.slice(0, 3).map((s) => (
+                        <span key={s} className="px-3 py-1.5 rounded-xl bg-white/10 backdrop-blur-md border border-white/10 text-[10px] font-black uppercase tracking-wider">
+                          {s}
                         </span>
                       ))}
                     </div>
-                  )}
+
+                    <div className="flex gap-4">
+                      <button
+                        className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-white text-black font-black text-sm transition-all hover:scale-[1.02] active:scale-95 shadow-xl"
+                        onClick={() => navigate(`/profile/${creators[currentIndex].id}`)}
+                      >
+                        <Info className="w-4 h-4" />
+                        View Profile
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="mt-8 flex items-center justify-center gap-4">
-              {/* Pass Button */}
-              <button
-                onClick={() => handleAction('pass')}
-                className="group flex items-center gap-3 px-6 py-4 rounded-2xl border-2 border-rose-400/30 bg-gradient-to-br from-rose-400/10 to-rose-600/10 hover:from-rose-400/20 hover:to-rose-600/20 hover:border-rose-400/50 transition-all shadow-lg hover:shadow-rose-400/20"
-                title="Pass"
-              >
-                <svg className="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                <span className="font-semibold text-rose-400">Pass</span>
-              </button>
-
-              {/* View Profile Button */}
-              <button
-                onClick={() => navigate(`/profile/${currentCreator?.id}`)}
-                className="flex items-center gap-2 px-5 py-4 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 transition-all shadow-lg"
-                title="View Profile"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <span className="font-medium text-sm">Profile</span>
-              </button>
-
-              {/* Connect Button */}
-              <button
-                onClick={() => handleAction('connect')}
-                className="group flex items-center gap-3 px-6 py-4 rounded-2xl border-2 border-emerald-400/30 bg-gradient-to-br from-emerald-400/10 to-emerald-600/10 hover:from-emerald-400/20 hover:to-emerald-600/20 hover:border-emerald-400/50 transition-all shadow-lg hover:shadow-emerald-400/20"
-                title="Connect"
-              >
-                <svg className="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                </svg>
-                <span className="font-semibold text-emerald-400">Connect</span>
-              </button>
-            </div>
-
-            <div className="mt-6 text-center">
-              <p className="text-sm text-white/60">
-                Click Pass to skip • Click Connect to match
-              </p>
-              <p className="text-xs text-white/40 mt-1">
-                {currentIndex + 1} of {creators.length}
-              </p>
-            </div>
+              </motion.div>
+            </AnimatePresence>
+            
+            <p className="absolute bottom-4 text-[var(--text-secondary)]/40 text-xs font-black uppercase tracking-widest shrink-0">
+              Creator {currentIndex + 1} of {creators.length}
+            </p>
           </div>
         ) : (
-          <div className="text-center py-12 rounded-3xl border border-white/10 bg-white/5 px-6">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-emerald-400/20 to-emerald-600/20 border border-emerald-400/30 flex items-center justify-center">
-              <svg className="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          <div className="flex flex-col items-center justify-center py-24 px-6 rounded-[3rem] bg-[var(--card-bg)] border border-[var(--border-color)] text-center shadow-sm flex-1">
+            <div className="w-20 h-20 bg-[var(--text-primary)]/5 rounded-full flex items-center justify-center mb-6">
+              <SlidersHorizontal className="w-8 h-8 text-[var(--text-secondary)]/30" />
             </div>
-            <h2 className="text-2xl font-semibold mb-2">You've seen everyone!</h2>
-            <p className="text-white/70 mb-6">Check back later for more creators</p>
-            <Link
-              to="/connections"
-              className="inline-flex items-center gap-2 rounded-2xl bg-white text-black px-6 py-3 text-sm font-medium hover:bg-white/90 transition"
+            <h3 className="text-2xl font-bold mb-2">No creators found</h3>
+            <p className="text-[var(--text-secondary)] max-w-xs mx-auto mb-8">
+              Try adjusting your filters to find more creative people.
+            </p>
+            <button
+              onClick={() => {
+                setFilters({ role: 'all', location: '', minExperience: 0, specialties: [] });
+              }}
+              className="text-sm font-bold underline underline-offset-4 hover:opacity-70 transition-opacity"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              View Connections
-            </Link>
+              Clear all filters
+            </button>
           </div>
         )}
       </div>
 
-      <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes scale-in {
-          from { transform: scale(0.8); opacity: 0; }
-          to { transform: scale(1); opacity: 1; }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out;
-        }
-        .animate-scale-in {
-          animation: scale-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-      `}</style>
+      {/* Filter Modal */}
+      <FilterModal
+        isOpen={showFilterModal}
+        onClose={() => setShowFilterModal(false)}
+        filters={filters}
+        onFiltersChange={setFilters}
+      />
     </div>
   );
 }

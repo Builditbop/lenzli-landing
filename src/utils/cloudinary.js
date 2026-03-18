@@ -1,7 +1,7 @@
 // Cloudinary image upload utility (Free alternative to Firebase Storage)
-// No upload preset needed! Uses Cloudinary's default unsigned upload
 
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'demo';
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'ml_default';
 
 /**
  * Upload image to Cloudinary using unsigned upload
@@ -11,7 +11,7 @@ const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dem
 export const uploadImageToCloudinary = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('upload_preset', 'ml_default'); // Cloudinary's default unsigned preset
+  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
   formData.append('folder', 'lenzli-portfolios');
 
   try {

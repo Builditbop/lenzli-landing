@@ -31,6 +31,50 @@ service cloud.firestore {
       allow create: if true;  // Anyone can join waitlist
       allow read: if request.auth != null;  // Only authenticated users can read
     }
+    
+    // Chats - metadata about conversations
+    match /chats/{chatId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid in resource.data.participants || 
+         request.auth.uid in chatId.split('_'));
+      allow create: if request.auth != null && 
+        request.auth.uid in request.resource.data.participants;
+      allow update: if request.auth != null && 
+        (request.auth.uid in resource.data.participants || 
+         request.auth.uid in chatId.split('_'));
+    }
+
+    // Messages - chat participants can read, create, and update read status
+    match /chats/{chatId}/messages/{messageId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+         request.auth.uid in chatId.split('_'));
+      allow create: if request.auth != null && 
+        (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+         request.auth.uid in chatId.split('_'));
+      allow update: if request.auth != null && 
+        (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+         request.auth.uid in chatId.split('_'));
+    }
+    
+    // Typing indicators - chat participants can read and write their own typing status
+    match /chats/{chatId}/typing/{userId} {
+      allow read: if request.auth != null && 
+        request.auth.uid in chatId.split('_');
+      allow write: if request.auth != null && 
+        request.auth.uid == userId &&
+        request.auth.uid in chatId.split('_');
+    }
+    
+    // Reports collection - users can create reports, admins can read
+    match /reports/{reportId} {
+      allow create: if request.auth != null;
+      allow read: if request.auth != null && 
+        (resource.data.reporterId == request.auth.uid ||
+         request.auth.token.admin == true);
+      allow update: if request.auth != null && 
+        request.auth.token.admin == true;
+    }
   }
 }
 ```
@@ -50,10 +94,16 @@ Click **"Publish"** to save the rules.
 - ✅ **Update/Delete**: Only the user who created can modify
 - ❌ **No anonymous access**: Must be logged in
 
-### Waitlist Collection (NEW!)
+### Waitlist Collection
 - ✅ **Create**: Anyone can add email (even without account)
 - ✅ **Read**: Only authenticated users
 - ✅ **Purpose**: Landing page email signups
+
+### Reports Collection (NEW!)
+- ✅ **Create**: Any authenticated user can report another user
+- ✅ **Read**: Users can read their own reports, admins can read all
+- ✅ **Update**: Only admins can update report status
+- ✅ **Purpose**: User safety and moderation
 
 ## 🔍 Viewing Waitlist Emails
 
