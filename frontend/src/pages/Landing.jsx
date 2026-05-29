@@ -135,11 +135,6 @@ export default function LenzliLanding() {
             <a href="#how" className="hover:text-ink transition-colors">How it works</a>
             <a href="#waitlist" className="hover:text-ink transition-colors">Waitlist</a>
           </div>
-          <div className="flex items-center gap-2">
-            <a href="#waitlist" className="rounded-full bg-ink text-paper px-4 py-2 text-sm font-medium hover:bg-ink-soft transition-colors">
-              Join waitlist
-            </a>
-          </div>
         </div>
       </header>
 
@@ -231,9 +226,11 @@ export default function LenzliLanding() {
          ══════════════════════════════════════ */}
       <section className="py-28 md:py-44 border-y border-line bg-surface/40">
         <TextReveal
-          text="Where visual creators find their crew."
-          className="text-center font-display text-4xl md:text-6xl lg:text-[4.5rem] font-semibold tracking-[-0.035em] leading-[1.04] text-ink px-6 max-w-5xl mx-auto"
-          highlightFrom={4}
+          className="text-center font-display text-4xl md:text-6xl lg:text-[4.5rem] font-semibold tracking-[-0.035em] leading-[1.04] px-6 max-w-5xl mx-auto"
+          segments={[
+            { text: "Where visual creators", className: "text-muted-soft" },
+            { text: "find their crew.", className: "text-ink font-serif-accent uppercase" },
+          ]}
         />
         <Reveal direction="up" delay={400}>
           <p className="text-center text-muted text-lg mt-8 max-w-xl mx-auto px-6">
@@ -378,7 +375,9 @@ function Reveal({ children, delay = 0, direction = 'up', className = '', distanc
 
 /* ═══════════════════════════════════════ WORD-BY-WORD TEXT REVEAL ═══════════════════════════════════════ */
 
-function TextReveal({ text, className = '', highlightFrom = -1 }) {
+// Animates word-by-word. `segments` is an array of { text, className } so
+// different parts of the line can carry different styling (color, font, case).
+function TextReveal({ segments, className = '' }) {
   const ref = useRef(null);
   const [vis, setVis] = useState(false);
 
@@ -393,19 +392,26 @@ function TextReveal({ text, className = '', highlightFrom = -1 }) {
     return () => obs.disconnect();
   }, []);
 
-  const words = text.split(' ');
+  const ease = 'cubic-bezier(0.16,1,0.3,1)';
+  let idx = 0; // global word index for the stagger
 
   return (
     <h2 ref={ref} className={className}>
-      {words.map((word, i) => (
-        <span key={i} className="inline-block" style={{
-          opacity: vis ? 1 : 0,
-          transform: vis ? 'translateY(0)' : 'translateY(16px)',
-          filter: vis ? 'blur(0)' : 'blur(3px)',
-          color: highlightFrom >= 0 && i >= highlightFrom ? '#9A998F' : undefined,
-          transition: `opacity 0.55s cubic-bezier(0.16,1,0.3,1) ${i * 55}ms, transform 0.55s cubic-bezier(0.16,1,0.3,1) ${i * 55}ms, filter 0.55s cubic-bezier(0.16,1,0.3,1) ${i * 55}ms`,
-        }}>
-          {word}&nbsp;
+      {segments.map((seg, si) => (
+        <span key={si} className={seg.className}>
+          {seg.text.split(' ').map((word, wi) => {
+            const i = idx++;
+            return (
+              <span key={wi} className="inline-block" style={{
+                opacity: vis ? 1 : 0,
+                transform: vis ? 'translateY(0)' : 'translateY(16px)',
+                filter: vis ? 'blur(0)' : 'blur(3px)',
+                transition: `opacity 0.55s ${ease} ${i * 55}ms, transform 0.55s ${ease} ${i * 55}ms, filter 0.55s ${ease} ${i * 55}ms`,
+              }}>
+                {word}&nbsp;
+              </span>
+            );
+          })}
         </span>
       ))}
     </h2>
@@ -452,7 +458,15 @@ function ArrowIcon({ className }) {
   return <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
 }
 function SwipeIcon() {
-  return <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M4 8h10M4 12h8M4 16h6" /><path d="M14 8l3-3 3 3M20 5v10" /></svg>;
+  // A swipe deck: a back card peeking behind the front card — the "swipe
+  // through creators" gesture that powers discovery.
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+      <rect x="9" y="4" width="11" height="15" rx="2.5" opacity="0.4" />
+      <rect x="4" y="6" width="11" height="14" rx="2.5" fill="currentColor" fillOpacity="0.12" />
+      <path d="M7 17.5l2.5-3 2 2 2.5-3.5" strokeLinecap="round" />
+    </svg>
+  );
 }
 function MapPinIcon() {
   return <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M12 21s7-4.5 7-10a7 7 0 10-14 0c0 5.5 7 10 7 10z" /><circle cx="12" cy="11" r="2.5" /></svg>;
