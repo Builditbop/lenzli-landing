@@ -1,7 +1,21 @@
+# Dependencies
 node_modules
+
+# Build output
 dist
-.DS_Store
-.vercel
+
+# Environment / secrets (matches .env in any folder, incl. frontend/ and backend/)
 .env
 .env.local
 .env.*.local
+
+# npm download cache (was committed by mistake — keep it out)
+.npm-cache
+
+# Local runtime data (waitlist signups are stored in Firestore in prod)
+backend/data/waitlist.json
+
+# Vercel + OS junk
+.vercel
+.DS_Store
+*.log
