@@ -5,34 +5,24 @@
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
+// Kept intentionally plain and personal (no big card, no images, no emoji) so
+// Gmail files it under Primary rather than Promotions.
 function confirmationHtml() {
   return `
-  <div style="background:#FAFAF7;padding:40px 16px;">
-    <div style="font-family:Inter,-apple-system,Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;padding:36px 28px;color:#1B1B18;background:#FFFFFF;border:1px solid #ECEBE4;border-radius:18px;">
-      <div style="display:inline-block;width:40px;height:40px;border:2px solid #1B1B18;border-radius:12px;text-align:center;line-height:40px;margin-bottom:20px;">
-        <span style="display:inline-block;width:14px;height:14px;border:2px solid #1B1B18;border-radius:50%;"></span>
-      </div>
-      <h1 style="font-size:24px;font-weight:600;letter-spacing:-0.02em;margin:0 0 12px;">You're on the list 🎉</h1>
-      <p style="font-size:15px;line-height:1.6;color:#56554f;margin:0 0 16px;">
-        Thanks for joining the <strong style="color:#1B1B18;">Lenzli</strong> waitlist. You're officially in line — we'll reach out at this address the moment we launch.
-      </p>
-      <p style="font-size:15px;line-height:1.6;color:#56554f;margin:0 0 24px;">
-        Lenzli is the network where image-makers discover each other by style, find real-time help on shoots, and build their crew.
-      </p>
-      <hr style="border:none;border-top:1px solid #ECEBE4;margin:24px 0;" />
-      <p style="font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#9A998F;margin:0;">Connect · Collaborate · Create</p>
-      <p style="font-size:13px;color:#9A998F;margin:6px 0 0;">— The Lenzli team</p>
-    </div>
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1B1B18;max-width:480px;">
+    <p style="margin:0 0 16px;">Hi,</p>
+    <p style="margin:0 0 16px;">Thanks for joining the Lenzli waitlist — you're in. We'll email you as soon as we open up access.</p>
+    <p style="margin:0 0 16px;">If you have any questions, just reply to this email.</p>
+    <p style="margin:0;">— The Lenzli team</p>
   </div>`;
 }
 
-const confirmationText = `You're on the list 🎉
+const confirmationText = `Hi,
 
-Thanks for joining the Lenzli waitlist! You're officially in line — we'll email you the moment we launch.
+Thanks for joining the Lenzli waitlist — you're in. We'll email you as soon as we open up access.
 
-Lenzli is the network where image-makers discover each other by style, find real-time help on shoots, and build their crew.
+If you have any questions, just reply to this email.
 
-Connect · Collaborate · Create
 — The Lenzli team`;
 
 async function sendViaResend({ to, subject, html, text }) {
@@ -72,7 +62,7 @@ async function sendViaResend({ to, subject, html, text }) {
 export function sendConfirmationEmail(to) {
   return sendViaResend({
     to,
-    subject: "You're on the Lenzli waitlist 🎉",
+    subject: "You're on the Lenzli waitlist",
     html: confirmationHtml(),
     text: confirmationText,
   });
