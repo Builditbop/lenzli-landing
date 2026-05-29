@@ -458,13 +458,12 @@ function ArrowIcon({ className }) {
   return <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
 }
 function SwipeIcon() {
-  // A swipe deck: a back card peeking behind the front card — the "swipe
-  // through creators" gesture that powers discovery.
+  // A single creator card with a photo glyph — the work you swipe through.
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
-      <rect x="9" y="4" width="11" height="15" rx="2.5" opacity="0.4" />
-      <rect x="4" y="6" width="11" height="14" rx="2.5" fill="currentColor" fillOpacity="0.12" />
-      <path d="M7 17.5l2.5-3 2 2 2.5-3.5" strokeLinecap="round" />
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round">
+      <rect x="5" y="3" width="14" height="18" rx="3" />
+      <circle cx="9.5" cy="9" r="1.4" />
+      <path d="M6.5 17l3.5-4 2.5 2.5L16 12l2.5 3" />
     </svg>
   );
 }
