@@ -125,12 +125,12 @@ export default function LenzliLanding() {
 
       {/* ── NAVBAR ── */}
       <header className="fixed top-0 z-50 w-full">
-        <div className="mt-3 mx-3 md:mx-auto flex max-w-6xl items-center justify-between rounded-full border border-line/80 bg-surface/70 px-5 py-2.5 backdrop-blur-xl shadow-soft">
-          <div className="flex items-center gap-2">
+        <div className="mt-3 mx-3 md:mx-auto grid grid-cols-[1fr_auto_1fr] items-center max-w-6xl rounded-full border border-line/80 bg-surface/70 px-5 py-2.5 backdrop-blur-xl shadow-soft">
+          <div className="col-start-2 justify-self-center flex items-center gap-2">
             <Logo />
             <span className="text-lg font-semibold font-display tracking-tight text-ink">Lenzli</span>
           </div>
-          <div className="hidden md:flex items-center gap-7 text-sm text-muted">
+          <div className="col-start-3 justify-self-end hidden md:flex items-center gap-7 text-sm text-muted">
             <a href="#features" className="hover:text-ink transition-colors">Features</a>
             <a href="#how" className="hover:text-ink transition-colors">How it works</a>
             <a href="#waitlist" className="hover:text-ink transition-colors">Waitlist</a>
